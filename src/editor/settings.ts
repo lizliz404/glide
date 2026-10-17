@@ -1,48 +1,88 @@
-export type Aspect = "16:9" | "9:16" | "4:3" | "3:4" | "1:1";
-export type Corner = "br" | "bl" | "tr" | "tl";
+// Every default here is Recordly's (webadderallorg/Recordly @ e4a9d04): the P1–P4 modules own their
+// sections and this file only composes them, plus motion presets (cursorMotionPresets.ts) applied the
+// way projectPersistence.normalizeProjectEditor / SettingsPanel.applyCursorMotionPreset do.
+import { CURSOR_MOTION_PRESETS, type CursorMotionPresetId } from "../vendor/recordly/cursorMotionPresets";
+import { ZOOM_DEFAULTS, type ZoomConfig } from "./camera";
+import { CURSOR_DEFAULTS, type CursorConfig } from "./cursor";
+import { FRAME_DEFAULTS, type FrameStyle } from "./frame";
+import { WEBCAM_DEFAULTS, type WebcamStyle } from "./webcam";
 
-export interface Settings {
+export type Aspect = "16:9" | "9:16" | "4:3" | "3:4" | "1:1";
+
+export interface GlideSettings {
+	/** projectPersistence: aspectRatio "16:9". */
 	aspect: Aspect;
-	background: { kind: "gradient"; stops: string[] } | { kind: "color"; color: string } | { kind: "image"; url: string };
-	/** Padding around the display, as a fraction of the shorter output side. */
-	padding: number;
-	/** Corner radius in px at 1080p, scaled with output size. */
-	radius: number;
-	/** 0..1 drop shadow strength. */
-	shadow: number;
-	zoom: {
-		enabled: boolean;
-		scale: number;
-		follow: boolean;
-		/** Clicks needed inside `gapMs` to trigger a zoom (Cursorful uses 2 to reduce motion). */
-		minClicks: number;
-		gapMs: number;
-		leadMs: number;
-		holdMs: number;
-	};
-	cursor: { draw: boolean; size: number; smoothing: number; ripple: boolean };
-	webcam: { show: boolean; size: number; corner: Corner; mirror: boolean; shape: "circle" | "rounded" };
+	/** projectPersistence: DEFAULT_MOTION_PRESET "focused". */
+	motionPreset: CursorMotionPresetId;
+	/** editorPreferences: autoApplyFreshRecordingAutoZooms (true). */
+	autoApplyZooms: boolean;
+	zoom: ZoomConfig;
+	frame: FrameStyle;
+	webcam: WebcamStyle;
+	cursor: CursorConfig;
 }
 
-export const GRADIENTS: Record<string, string[]> = {
-	Dusk: ["#1e3a8a", "#7c3aed", "#f472b6"],
-	Sky: ["#0ea5e9", "#6366f1"],
-	Mint: ["#064e3b", "#10b981", "#a7f3d0"],
-	Sunset: ["#f97316", "#db2777", "#7c3aed"],
-	Graphite: ["#0b0f19", "#1f2937", "#374151"],
-	Paper: ["#fafaf9", "#e7e5e4"],
-};
+const clone = <T>(v: T): T => structuredClone(v);
 
-export const defaultSettings = (): Settings => ({
-	aspect: "16:9",
-	background: { kind: "gradient", stops: GRADIENTS.Dusk },
-	padding: 0.07,
-	radius: 18,
-	shadow: 0.6,
-	zoom: { enabled: true, scale: 1.8, follow: true, minClicks: 1, gapMs: 3000, leadMs: 300, holdMs: 1600 },
-	cursor: { draw: true, size: 1, smoothing: 0.5, ripple: true },
-	webcam: { show: true, size: 0.24, corner: "br", mirror: true, shape: "circle" },
-});
+export function defaultSettings(): GlideSettings {
+	return {
+		aspect: "16:9",
+		motionPreset: "focused",
+		autoApplyZooms: true,
+		zoom: clone(ZOOM_DEFAULTS),
+		frame: clone(FRAME_DEFAULTS),
+		webcam: clone(WEBCAM_DEFAULTS),
+		cursor: clone(CURSOR_DEFAULTS),
+	};
+}
+
+/** SettingsPanel.applyCursorMotionPreset: zoom durations + smoothness and the cursor motion block. */
+export function applyMotionPreset(s: GlideSettings, id: CursorMotionPresetId): void {
+	const p = CURSOR_MOTION_PRESETS[id];
+	s.motionPreset = id;
+	s.zoom.zoomSmoothness = p.zoomSmoothness;
+	s.zoom.zoomInDurationMs = p.zoomInDurationMs;
+	s.zoom.zoomOutDurationMs = p.zoomOutDurationMs;
+	s.cursor.size = p.cursorSize;
+	s.cursor.smoothing = p.cursorSmoothing;
+	s.cursor.spring = {
+		stiffnessMultiplier: p.cursorSpringStiffnessMultiplier,
+		dampingMultiplier: p.cursorSpringDampingMultiplier,
+		massMultiplier: p.cursorSpringMassMultiplier,
+	};
+	s.cursor.clickBounce = p.cursorClickBounce;
+	s.cursor.clickBounceDuration = p.cursorClickBounceDuration;
+}
+
+const KEY = "glide.settings.v2";
+
+/** Saved settings merged over the defaults; uploaded (blob:) backgrounds are never restored. */
+export function loadSettings(storage: Pick<Storage, "getItem"> | null = globalThis.localStorage ?? null): GlideSettings {
+	const d = defaultSettings();
+	try {
+		const raw = storage?.getItem(KEY);
+		if (!raw) return d;
+		const saved = JSON.parse(raw) as Partial<GlideSettings>;
+		const s: GlideSettings = {
+			...d,
+			...saved,
+			zoom: { ...d.zoom, ...saved.zoom, cameraSpring: { ...d.zoom.cameraSpring, ...saved.zoom?.cameraSpring } },
+			frame: { ...d.frame, ...saved.frame },
+			webcam: { ...d.webcam, ...saved.webcam },
+			cursor: { ...d.cursor, ...saved.cursor, spring: { ...d.cursor.spring, ...saved.cursor?.spring } },
+		};
+		if (s.frame.background.kind === "image" && s.frame.background.url.startsWith("blob:")) s.frame.background = d.frame.background;
+		return s;
+	} catch {
+		return d;
+	}
+}
+
+export function saveSettings(s: GlideSettings, storage: Pick<Storage, "setItem"> | null = globalThis.localStorage ?? null): void {
+	const copy = clone(s);
+	if (copy.frame.background.kind === "image" && copy.frame.background.url.startsWith("blob:")) copy.frame.background = FRAME_DEFAULTS.background;
+	storage?.setItem(KEY, JSON.stringify(copy));
+}
 
 export function outputSize(aspect: Aspect, base = 1080): { width: number; height: number } {
 	const [w, h] = aspect.split(":").map(Number);

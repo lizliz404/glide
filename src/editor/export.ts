@@ -17,9 +17,9 @@ import {
 	QUALITY_HIGH,
 	WebMOutputFormat,
 } from "mediabunny";
-import { Camera, type Track, type ZoomSegment } from "./camera";
-import { renderFrame } from "./render";
-import { outputSize, type Settings } from "./settings";
+import { Compositor, type SceneData } from "./compose";
+import { preloadCursorAssets } from "./cursor";
+import { outputSize, type GlideSettings } from "./settings";
 
 export interface ExportOptions {
 	container: "mp4" | "webm";
@@ -27,9 +27,8 @@ export interface ExportOptions {
 	screen: Blob;
 	camera: Blob | null;
 	bgImage: CanvasImageSource | null;
-	track: Track;
-	segments: ZoomSegment[];
-	settings: Settings;
+	scene: SceneData;
+	settings: GlideSettings;
 	durationMs: number;
 	onProgress?: (p: number) => void;
 	signal?: AbortSignal;
@@ -59,7 +58,7 @@ export async function exportVideo(o: ExportOptions): Promise<ExportResult> {
 
 	let camSink: CanvasSink | null = null;
 	let camT0 = 0;
-	if (o.camera && o.settings.webcam.show) {
+	if (o.camera && o.settings.webcam.enabled) {
 		const camIn = new Input({ source: new BlobSource(o.camera), formats: ALL_FORMATS });
 		const ct = await camIn.getPrimaryVideoTrack();
 		if (ct) {
@@ -82,8 +81,10 @@ export async function exportVideo(o: ExportOptions): Promise<ExportResult> {
 
 	const frames = Math.max(1, Math.round((o.durationMs / 1000) * o.fps));
 	const times = Array.from({ length: frames }, (_, i) => i / o.fps);
-	const camera = new Camera(o.track, o.segments, o.settings);
-	const dt = 1000 / o.fps;
+	// Same compositor as the preview, fresh state, content-time steps of 1000/fps (frameRenderer).
+	if (o.settings.cursor.show) await preloadCursorAssets();
+	const comp = new Compositor(o.settings);
+	comp.reset();
 
 	const videoJob = (async () => {
 		const screenIt = screenSink.canvasesAtTimestamps(times.map((t) => t0 + t));
@@ -95,15 +96,16 @@ export async function exportVideo(o: ExportOptions): Promise<ExportResult> {
 			const c = camIt ? await camIt.next() : null;
 			if (s.value) lastScreen = s.value.canvas;
 			const tMs = times[i] * 1000;
-			renderFrame(ctx, width, height, {
-				screen: lastScreen as never,
-				camera: (c?.value?.canvas ?? null) as never,
-				bgImage: o.bgImage,
-				cam: camera.frame(tMs, dt),
-				track: o.track,
-				t: tMs,
-				settings: o.settings,
-			});
+			const camCanvas = (c?.value?.canvas ?? null) as OffscreenCanvas | HTMLCanvasElement | null;
+			comp.draw(
+				ctx,
+				width,
+				height,
+				tMs,
+				{ screen: lastScreen, cam: camCanvas, camW: camCanvas?.width ?? 0, camH: camCanvas?.height ?? 0, bgImage: o.bgImage },
+				o.scene,
+				i === 0,
+			);
 			await vsrc.add(times[i], 1 / o.fps);
 			if (i % 10 === 0) o.onProgress?.(i / frames);
 		}

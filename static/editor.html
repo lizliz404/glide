@@ -4,65 +4,154 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Glide editor</title>
+<link rel="icon" href="icons/32.png" />
 <link rel="stylesheet" href="ui.css" />
 </head>
 <body class="editor">
-<header class="bar">
-  <strong class="brand">Glide</strong>
+<!-- Layout mirrors Recordly's EditorShell: header, sidebar (icon rail + settings panel) beside the
+     preview, full-width timeline below. Labels come from Recordly's en/settings.json. -->
+<header class="topbar">
+  <div class="brand"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg>Glide</div>
   <p id="status" role="status" aria-live="polite">Loading…</p>
   <label class="btn ghost">Open files<input id="open-files" type="file" accept="video/*,.json" multiple hidden /></label>
+  <div class="export-group">
+    <progress id="progress" max="1" value="0" hidden aria-label="Export progress"></progress>
+    <button id="cancel" type="button" class="btn ghost" hidden>Cancel</button>
+    <button id="export-webm" type="button" class="btn">Export WebM</button>
+    <button id="export-mp4" type="button" class="btn primary">Export MP4</button>
+  </div>
 </header>
-<main class="layout">
-  <section class="preview" aria-label="Preview">
+
+<div class="workspace">
+  <nav class="rail" role="tablist" aria-label="Editor sections" aria-orientation="vertical">
+    <button type="button" role="tab" id="tab-scene" data-section="scene" aria-controls="panel-scene" aria-selected="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5h4M16 5h4v4M20 15v4h-4M8 19H4v-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Scene</span></button>
+    <button type="button" role="tab" id="tab-cursor" data-section="cursor" aria-controls="panel-cursor" aria-selected="false" tabindex="-1">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 7-6 2-2 6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Cursor</span></button>
+    <button type="button" role="tab" id="tab-webcam" data-section="webcam" aria-controls="panel-webcam" aria-selected="false" tabindex="-1">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="13" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 11l5-3v8l-5-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Webcam</span></button>
+    <button type="button" role="tab" id="tab-settings" data-section="settings" aria-controls="panel-settings" aria-selected="false" tabindex="-1">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Settings</span></button>
+  </nav>
+
+  <aside class="panel" aria-label="Settings panel">
+    <section id="panel-scene" role="tabpanel" aria-labelledby="tab-scene">
+      <h2>Background</h2>
+      <div class="segmented" role="radiogroup" aria-label="Background type">
+        <button type="button" role="radio" data-bg-tab="image" aria-checked="true">Image</button>
+        <button type="button" role="radio" data-bg-tab="color" aria-checked="false">Color</button>
+        <button type="button" role="radio" data-bg-tab="gradient" aria-checked="false">Gradient</button>
+      </div>
+      <div id="bg-pane-image" class="bg-pane">
+        <div id="wallpapers" class="grid wallpapers" role="radiogroup" aria-label="Wallpapers"></div>
+        <label class="btn ghost wide">Upload Custom<input id="bg-upload" type="file" accept="image/*" hidden /></label>
+      </div>
+      <div id="bg-pane-color" class="bg-pane" hidden>
+        <div id="colors" class="grid colors" role="radiogroup" aria-label="Colors"></div>
+        <label>Custom color <input id="bg-color" type="color" value="#111827" /></label>
+      </div>
+      <div id="bg-pane-gradient" class="bg-pane" hidden>
+        <div id="gradients" class="grid gradients" role="radiogroup" aria-label="Gradients"></div>
+      </div>
+      <label>Blur <input id="bg-blur" type="range" min="0" max="8" step="0.25" /><output for="bg-blur"></output></label>
+      <h2>Frame</h2>
+      <label>Shadow <input id="frame-shadow" type="range" min="0" max="1" step="0.01" /><output for="frame-shadow"></output></label>
+      <label>Radius <input id="frame-radius" type="range" min="0" max="50" step="0.1" /><output for="frame-radius"></output></label>
+      <label>Padding <input id="frame-padding" type="range" min="0" max="100" step="1" /><output for="frame-padding"></output></label>
+    </section>
+
+    <section id="panel-cursor" role="tabpanel" aria-labelledby="tab-cursor" hidden>
+      <h2>Cursor</h2>
+      <label class="check"><input id="cursor-show" type="checkbox" /> Show Cursor</label>
+      <label>Cursor Style <select id="cursor-style">
+        <option value="tahoe">Tahoe</option><option value="tahoe-inverted">Tahoe Inverted</option><option value="macos">macOS</option>
+        <option value="windows11">Windows 11</option><option value="dot">Dot</option><option value="figma">Minimal</option></select></label>
+      <label>Cursor Size <input id="cursor-size" type="range" min="0.5" max="10" step="0.05" /><output for="cursor-size"></output></label>
+      <label>Cursor Smoothing <input id="cursor-smoothing" type="range" min="0" max="2" step="0.01" /><output for="cursor-smoothing"></output></label>
+      <h2>Click Effects</h2>
+      <div class="segmented" role="radiogroup" aria-label="Click Effects" id="click-effects">
+        <button type="button" role="radio" data-value="none">Off</button>
+        <button type="button" role="radio" data-value="ripple">Ripple</button>
+        <button type="button" role="radio" data-value="spotlight">Spotlight</button>
+        <button type="button" role="radio" data-value="echo">Echo</button>
+      </div>
+      <label>Effect Color <input id="click-color" type="color" /></label>
+      <label>Cursor Click Bounce <input id="cursor-bounce" type="range" min="0" max="5" step="0.05" /><output for="cursor-bounce"></output></label>
+      <label>Bounce Speed <input id="cursor-bounce-ms" type="range" min="60" max="500" step="5" /><output for="cursor-bounce-ms"></output></label>
+      <label>Cursor Sway <input id="cursor-sway" type="range" min="0" max="1" step="0.025" /><output for="cursor-sway"></output></label>
+    </section>
+
+    <section id="panel-webcam" role="tabpanel" aria-labelledby="tab-webcam" hidden>
+      <h2>Webcam Overlay</h2>
+      <p id="webcam-none" class="hint">No webcam footage linked to this video</p>
+      <label class="check"><input id="webcam-show" type="checkbox" /> Show</label>
+      <label>Webcam Size <input id="webcam-size" type="range" min="10" max="80" step="1" /><output for="webcam-size"></output></label>
+      <label>Webcam Roundness <input id="webcam-roundness" type="range" min="0" max="100" step="1" /><output for="webcam-roundness"></output></label>
+      <label>Webcam Shadow <input id="webcam-shadow" type="range" min="0" max="1" step="0.01" /><output for="webcam-shadow"></output></label>
+      <div class="row"><span id="webcam-pos-label">Position</span><div id="webcam-pos" class="pos-grid" role="radiogroup" aria-labelledby="webcam-pos-label"></div></div>
+      <label class="check"><input id="webcam-mirror" type="checkbox" /> Mirror webcam</label>
+      <label class="check"><input id="webcam-react" type="checkbox" /> Webcam Reacts To Zoom</label>
+    </section>
+
+    <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <h2>Motion Presets</h2>
+      <div id="motion-presets" class="cards" role="radiogroup" aria-label="Motion Presets">
+        <button type="button" role="radio" data-value="focused"><b>Focused</b><span>Snappier motion for demos, walkthroughs, and everyday recordings.</span></button>
+        <button type="button" role="radio" data-value="smooth"><b>Smooth</b><span>Gentler motion for presentations, keynote-style videos, and polished reveals.</span></button>
+      </div>
+      <h2>Zoom</h2>
+      <label class="check"><input id="connect-zooms" type="checkbox" /> Connect Zooms</label>
+      <p class="hint">Smooth consecutive zoom regions into a continuous camera move.</p>
+      <label class="check"><input id="auto-apply" type="checkbox" /> Auto-apply fresh recording zooms</label>
+      <p class="hint">Suggest edge-recentering zooms automatically when you open a new recording.</p>
+      <button id="reset-defaults" type="button" class="btn ghost wide">Reset to defaults</button>
+    </section>
+
+    <section id="panel-zoom" role="region" aria-label="Zoom" hidden>
+      <h2>Zoom</h2>
+      <p id="zoom-none" class="hint">Select a zoom region to adjust</p>
+      <div id="zoom-edit">
+        <span class="label" id="zoom-level-label">Zoom Level</span>
+        <div id="zoom-depth" class="segmented six" role="radiogroup" aria-labelledby="zoom-level-label"></div>
+        <div id="zoom-mode" class="cards" role="radiogroup" aria-label="Zoom mode">
+          <button type="button" role="radio" data-value="auto"><b>Auto</b><span>Camera recenters when the cursor nears the edge of the zoomed view</span></button>
+          <button type="button" role="radio" data-value="manual"><b>Manual</b><span>Set a fixed focus point for this zoom (click the preview)</span></button>
+        </div>
+        <button id="zoom-delete" type="button" class="btn danger wide">Delete Zoom</button>
+      </div>
+    </section>
+  </aside>
+
+  <main class="preview" aria-label="Preview">
     <div class="stage-wrap"><canvas id="stage" width="1920" height="1080" aria-label="Composited video preview"></canvas>
       <div id="empty" class="empty" hidden><p>No recording loaded. Record from the Glide toolbar button, or use <b>Open files</b> (screen video, optional webcam video with “cam” in its name, optional events JSON).</p></div>
     </div>
     <div class="transport">
-      <button id="play" type="button" class="btn" aria-pressed="false">Play</button>
-      <input id="scrub" type="range" min="0" max="1" step="1" value="0" aria-label="Seek" />
+      <button id="play" type="button" class="btn icon" aria-pressed="false" aria-label="Play">▶</button>
       <span id="time" class="mono">0:00.0 / 0:00.0</span>
+      <span class="spacer"></span>
+      <label class="inline">Aspect <select id="aspect"><option>16:9</option><option>9:16</option><option>4:3</option><option>3:4</option><option>1:1</option></select></label>
     </div>
-    <div id="timeline" class="timeline" aria-label="Zoom segments (blue) and clicks (white ticks)"></div>
-    <p class="hint"><span id="seg-count"></span> · Space to play/pause</p>
-  </section>
-  <aside class="panel" aria-label="Settings">
-    <fieldset><legend>Canvas</legend>
-      <label>Aspect <select id="aspect"><option>16:9</option><option>9:16</option><option>4:3</option><option>3:4</option><option>1:1</option></select></label>
-      <div class="row"><span>Background</span><div id="swatches" class="swatches"></div></div>
-      <label>Solid color <input id="bg-color" type="color" value="#111827" /></label>
-      <label>Image <input id="bg-image" type="file" accept="image/*" /></label>
-      <label>Padding <input id="padding" type="range" min="0" max="0.2" step="0.005" /><output for="padding"></output></label>
-      <label>Corner radius <input id="radius" type="range" min="0" max="48" step="1" /><output for="radius"></output></label>
-      <label>Shadow <input id="shadow" type="range" min="0" max="1" step="0.05" /><output for="shadow"></output></label>
-    </fieldset>
-    <fieldset><legend>Zoom</legend>
-      <label class="check"><input id="zoom-on" type="checkbox" /> Auto-zoom on clicks</label>
-      <label>Scale <input id="zoom-scale" type="range" min="1.2" max="3" step="0.1" /><output for="zoom-scale"></output></label>
-      <label class="check"><input id="zoom-follow" type="checkbox" /> Follow cursor while zoomed</label>
-      <label>Trigger <select id="zoom-clicks"><option value="1">every click</option><option value="2">2 clicks within 3s</option></select></label>
-      <label>Hold after click <input id="zoom-hold" type="range" min="400" max="4000" step="100" /><output for="zoom-hold"></output></label>
-    </fieldset>
-    <fieldset><legend>Cursor</legend>
-      <label class="check"><input id="cursor-draw" type="checkbox" /> Draw smooth cursor</label>
-      <label>Size <input id="cursor-size" type="range" min="0.6" max="2" step="0.1" /><output for="cursor-size"></output></label>
-      <label>Smoothing <input id="cursor-smooth" type="range" min="0" max="2" step="0.1" /><output for="cursor-smooth"></output></label>
-      <label class="check"><input id="cursor-ripple" type="checkbox" /> Click ripple</label>
-    </fieldset>
-    <fieldset><legend>Webcam</legend>
-      <label class="check"><input id="cam-show" type="checkbox" /> Show webcam</label>
-      <label>Size <input id="cam-size" type="range" min="0.1" max="0.45" step="0.01" /><output for="cam-size"></output></label>
-      <label>Corner <select id="cam-corner"><option value="br">bottom right</option><option value="bl">bottom left</option><option value="tr">top right</option><option value="tl">top left</option></select></label>
-      <label>Shape <select id="cam-shape"><option value="circle">circle</option><option value="rounded">rounded square</option></select></label>
-      <label class="check"><input id="cam-mirror" type="checkbox" /> Mirror</label>
-    </fieldset>
-    <div class="export">
-      <button id="export-mp4" type="button" class="btn primary">Export MP4</button>
-      <button id="export-webm" type="button" class="btn">Export WebM</button>
-      <button id="cancel" type="button" class="btn ghost" hidden>Cancel</button>
-      <progress id="progress" max="1" value="0" hidden aria-label="Export progress"></progress>
-    </div>
-  </aside>
-</main>
+  </main>
+</div>
+
+<section class="timeline-panel" aria-label="Timeline">
+  <div class="tl-toolbar">
+    <button id="add-zoom" type="button" class="btn small">+ Zoom</button>
+    <button id="suggest-zooms" type="button" class="btn small ghost">Suggest Zooms</button>
+    <span id="seg-count" class="hint"></span>
+    <span class="spacer"></span>
+    <span class="hint">Space play/pause · ←/→ seek · Delete removes the selected zoom</span>
+  </div>
+  <div id="timeline" class="timeline" role="slider" tabindex="0" aria-label="Playhead" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+    <div id="ruler" class="ruler"></div>
+    <div class="track clip-track"><div class="clip">Recording</div><div id="clicks" class="clicks"></div></div>
+    <div id="zoom-track" class="track zoom-track" aria-label="Zoom regions"></div>
+    <div id="playhead" class="playhead"></div>
+  </div>
+</section>
+
+<footer class="credit">Based on <a href="https://github.com/webadderallorg/Recordly" target="_blank" rel="noopener">Recordly</a> (AGPL-3.0) · Glide is AGPL-3.0 · <a href="https://github.com/lizliz404/glide" target="_blank" rel="noopener">Source</a></footer>
 <script type="module" src="editor.js"></script>
 </body>
 </html>

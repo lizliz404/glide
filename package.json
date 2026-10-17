@@ -1,7 +1,7 @@
 {
   "name": "glide",
   "version": "0.1.0",
-  "description": "Browser-only Screen Studio: Chrome MV3 extension that records a tab/window/screen + mic + webcam and exports polished MP4 with cursor-follow zoom.",
+  "description": "Browser-only Screen Studio: a Chrome MV3 port of Recordly's editor (auto-zoom, cursor, frame, webcam bubble) that records a tab/window/screen + mic + webcam and exports MP4/WebM.",
   "scripts": {
     "build": "node build.mjs",
     "watch": "node build.mjs --watch",
@@ -12,11 +12,10 @@
     "test:record": "npm run build && SURFACE=monitor HEADFUL=1 xvfb-run -a -s '-screen 0 1920x1080x24' node test/record-smoke.mjs",
     "test:unit": "vitest run"
   },
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "dependencies": {
-    "mediabunny": "^1.61.6",
-    "motion": "^14.3.0"
+    "mediabunny": "^1.61.6"
   },
   "devDependencies": {
     "@types/chrome": "^0.3.5",

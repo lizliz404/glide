@@ -54,7 +54,7 @@ try {
 	const ed = await edTarget.page();
 	await ed.waitForSelector("body[data-ready]", { timeout: 20000 });
 	console.log("editor:", await ed.$eval("#status", (e) => e.textContent));
-	const n = await ed.evaluate(() => ({ events: glide.state.events.length, clicks: glide.state.track.clicks.length, segs: glide.state.segments.length }));
+	const n = await ed.evaluate(() => ({ events: glide.state.events.length, clicks: glide.state.telemetry.filter((p) => p.interactionType !== "move" && p.interactionType !== "mouseup").length, segs: glide.state.regions.length }));
 	console.log("pointer data:", JSON.stringify(n));
 	if (!n.events || !n.clicks) throw new Error("no pointer events captured");
 } catch (e) {
