@@ -11,3 +11,7 @@ Packages P1–P4 add more files here; list them in the table below.
 | File | Upstream path | Owner package |
 | --- | --- | --- |
 | types.ts, mathUtils.ts, motionSmoothing.ts, cursorPosition.ts, constants.ts, focusUtils.ts, cursorMotionPresets.ts, squircle.ts | see headers | P0 (shared) |
+| sceneEffects.ts | src/components/video-editor/videoPlayback/sceneEffects.ts (verbatim) | P2 |
+| shadowProfile.ts | src/lib/exporter/shadowProfile.ts (verbatim; P3 uses the webcam half) | P2 |
+| layoutMath.ts | src/components/video-editor/videoPlayback/layoutUtils.ts (pure helpers only, Pixi removed) | P2 |
+| wallpaperFill.ts | src/lib/exporter/frameRenderer.ts `setupBackground` + `configureHighQuality2DContext` | P2 |
