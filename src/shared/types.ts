@@ -1,15 +1,28 @@
-/** One pointer sample logged by the content script. Times are wall-clock ms (Date.now()). */
+import type { CursorTelemetryPoint } from "../vendor/recordly/types";
+
+/** Recordly's cursor-type keys (CursorTelemetryPoint.cursorType). */
+export type PointerCursor = NonNullable<CursorTelemetryPoint["cursorType"]>;
+
+/**
+ * One pointer sample logged by the content script. The recorder logs wall-clock ms (Date.now());
+ * bundles handed to the editor are rebased so `t` is ms since MediaRecorder started.
+ */
 export interface PointerEvt {
 	t: number;
-	kind: "move" | "down" | "up";
+	/**
+	 * "down"/"up" are the primary (left) button; "rightclick"/"middleclick" are presses of
+	 * buttons 2/1. Double-clicks are not a separate kind: like Recordly's recordCursorMouseDown,
+	 * toTelemetry() marks a left press as a double-click from its timing and distance.
+	 */
+	kind: "move" | "down" | "up" | "rightclick" | "middleclick";
 	/** Normalised to the page viewport (tab capture). */
 	tab: [number, number];
 	/** Normalised to the outer browser window (window capture). */
 	win: [number, number];
 	/** Normalised to the monitor the window is on (screen capture). */
 	mon: [number, number];
-	/** Coarse cursor style under the pointer, used to pick the drawn cursor. */
-	cursor: "arrow" | "pointer" | "text";
+	/** Cursor shape under the pointer, as a Recordly cursor-type key. */
+	cursor: PointerCursor;
 }
 
 export type Surface = "browser" | "window" | "monitor";

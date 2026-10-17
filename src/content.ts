@@ -1,7 +1,7 @@
 // Pointer logger. Injected into every tab only while a recording is running (registered
 // dynamically by the service worker, then unregistered), so Glide reads nothing from pages
 // the rest of the time. It never reads page content: only pointer position, button state
-// and the coarse cursor style under the pointer.
+// and the CSS cursor shape under the pointer.
 import type { PointerEvt } from "./shared/types";
 
 declare global {
@@ -20,11 +20,38 @@ if (!window.__glideContent) {
 		if (area === "local" && "glideRecording" in c) active = !!c.glideRecording.newValue;
 	});
 
+	// CSS cursor keyword -> Recordly cursor-type key. Recordly's native monitors report the OS
+	// cursor (e.g. Windows IDC_SIZEALL -> "open-hand"); the browser equivalent is the computed CSS
+	// cursor of the element under the pointer. "url(...), pointer" falls back to its keyword.
+	const CSS_CURSOR: Record<string, PointerEvt["cursor"]> = {
+		pointer: "pointer",
+		text: "text",
+		"vertical-text": "text",
+		grab: "open-hand",
+		move: "open-hand",
+		"all-scroll": "open-hand",
+		grabbing: "closed-hand",
+		crosshair: "crosshair",
+		"ew-resize": "resize-ew",
+		"col-resize": "resize-ew",
+		"e-resize": "resize-ew",
+		"w-resize": "resize-ew",
+		"ns-resize": "resize-ns",
+		"row-resize": "resize-ns",
+		"n-resize": "resize-ns",
+		"s-resize": "resize-ns",
+		"not-allowed": "not-allowed",
+		"no-drop": "not-allowed",
+	};
+
 	const cursorAt = (el: EventTarget | null): PointerEvt["cursor"] => {
 		if (!(el instanceof Element)) return "arrow";
-		const c = getComputedStyle(el).cursor;
-		if (c === "pointer") return "pointer";
-		if (c === "text" || el.matches("input,textarea,[contenteditable='true']")) return "text";
+		const raw = getComputedStyle(el).cursor;
+		const keyword = raw.slice(raw.lastIndexOf(",") + 1).trim();
+		const mapped = CSS_CURSOR[keyword];
+		if (mapped) return mapped;
+		// "auto" over editable text shows an I-beam.
+		if (keyword === "auto" && el.matches("input,textarea,[contenteditable='true']")) return "text";
 		return "arrow";
 	};
 
@@ -58,7 +85,13 @@ if (!window.__glideContent) {
 		},
 		{ passive: true, capture: true },
 	);
-	addEventListener("mousedown", (e) => send(e, "down"), { passive: true, capture: true });
+	// Button 0 = primary, 1 = middle, 2 = right (MouseEvent.button), matching Recordly's
+	// recordCursorMouseDown(1 | 2 | 3) split into click / middle-click / right-click.
+	addEventListener(
+		"mousedown",
+		(e) => send(e, e.button === 2 ? "rightclick" : e.button === 1 ? "middleclick" : "down"),
+		{ passive: true, capture: true },
+	);
 	addEventListener("mouseup", (e) => send(e, "up"), { passive: true, capture: true });
 }
 export {};
