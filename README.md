@@ -11,7 +11,7 @@ You get all of this with zero tuning, then export MP4 or WebM. No native app, no
 
 Why the browser: picking screens/windows, mic and camera permissions, and Wayland portals are the painful part of native recorders on Linux. Chrome solves all of that with one share dialog. If what you're demoing is a web page or a `localhost` app, a tab is all you need, and in a tab the extension sees every click precisely.
 
-> Status: v0.2, the Recordly port. Recording, editing and export work end to end; see [What is tested](#what-is-tested) and [Limitations](#limitations).
+> Status: v0.2, the Recordly port. Recording, editing and export work end to end. **[docs/STATUS.md](docs/STATUS.md)** covers what's done, the file-by-file list of what was copied from Recordly, design decisions, and the remaining gaps and warnings.
 
 ## Install on Arch / Omarchy
 
@@ -148,7 +148,7 @@ Not covered automatically: tab capture (Chrome's auto-select flag for tabs doesn
 - Export speed depends on hardware video encode. On the CPU-only CI box, 12 s of 1080p takes about 3 minutes per container. A desktop GPU is much faster.
 - Chrome on Linux has no AAC encoder in WebCodecs, so MP4 audio is Opus. If an editor such as CapCut rejects it: `ffmpeg -i in.mp4 -c:v copy -c:a aac out.mp4`.
 - Some Chromium builds lack an H.264 encoder. Glide then writes VP9 in MP4 and says so in the status line.
-- The bundled wallpapers and cursors are Apple- and Microsoft-derived artwork that Recordly ships without a license. They're fine for private use; replace them before publishing (see `THIRD_PARTY_NOTICES.md`).
+- The bundled wallpapers and cursors are Apple- and Microsoft-derived artwork that Recordly ships without a license. This repo is public, so that's a live copyright risk: replace them with CC0 or self-made assets (see `THIRD_PARTY_NOTICES.md` and `docs/STATUS.md`).
 
 ## Roadmap
 

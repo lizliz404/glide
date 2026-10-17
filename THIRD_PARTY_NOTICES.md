@@ -15,6 +15,6 @@ Recordly ships its wallpapers and cursor images without a stated license or sour
 - `static/wallpapers/tahoe-*.jpg`, `sequoia-blue-orange.jpg` and `ventura.jpg` appear to be Apple macOS wallpapers. `glassmorphism-4.jpg` has no stated origin.
 - `static/cursors/tahoe/`, `golden-gate/` and `macos/` are converted macOS system cursors, which makes them Apple artwork. `windows11/` resembles Microsoft's cursors.
 
-That is fine for private use. Replace these files before distributing Glide publicly.
+The Glide repository is public, so shipping these files is a copyright risk. Replace them with CC0 or self-made assets, or make the repository private.
 
 The built bundle keeps upstream license comments in `dist/*.LEGAL.txt` (esbuild `legalComments: "linked"`).

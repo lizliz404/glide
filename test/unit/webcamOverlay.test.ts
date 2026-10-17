@@ -1,3 +1,7 @@
+// Copied from webadderallorg/Recordly (AGPL-3.0) @ e4a9d04860f4cbad3358bda3ac4a2307489f1d03
+// Source: src/components/video-editor/webcamOverlay.test.ts
+// Changes: import path -> ../../src/vendor/recordly/
+
 import { describe, expect, it } from "vitest";
 import {
 	convertLegacyWebcamRadiusToRoundness,
