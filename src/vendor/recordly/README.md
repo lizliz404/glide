@@ -11,3 +11,5 @@ Packages P1–P4 add more files here; list them in the table below.
 | File | Upstream path | Owner package |
 | --- | --- | --- |
 | types.ts, mathUtils.ts, motionSmoothing.ts, cursorPosition.ts, constants.ts, focusUtils.ts, cursorMotionPresets.ts, squircle.ts | see headers | P0 (shared) |
+| webcamOverlay.ts | src/components/video-editor/webcamOverlay.ts | P3 |
+| shadowProfile.ts | src/lib/exporter/shadowProfile.ts | P3 (byte-identical if P2 also copies it) |
