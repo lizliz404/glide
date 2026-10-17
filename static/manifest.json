@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Glide — browser screen studio",
+  "short_name": "Glide",
+  "version": "0.1.0",
+  "description": "Record a tab, window or screen with mic and webcam, then add Screen Studio-style backgrounds, cursor-follow zoom and a webcam bubble. Local only.",
+  "minimum_chrome_version": "116",
+  "action": { "default_title": "Glide", "default_popup": "popup.html", "default_icon": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" } },
+  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["offscreen", "storage", "scripting"],
+  "optional_host_permissions": ["<all_urls>"],
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'" }
+}

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Glide</title><link rel="stylesheet" href="ui.css" /></head>
+<body class="popup">
+  <h1 class="brand">Glide</h1>
+  <label>Capture <select id="surface">
+    <option value="browser">Tab (best: cursor + zoom)</option>
+    <option value="window">Browser window (all tabs)</option>
+    <option value="monitor">Entire screen</option>
+  </select></label>
+  <label class="check"><input id="mic" type="checkbox" checked /> Microphone</label>
+  <label class="check"><input id="camera" type="checkbox" checked /> Webcam</label>
+  <button id="start" type="button" class="btn primary wide">Record</button>
+  <button id="stop" type="button" class="btn danger wide" hidden>Stop and edit</button>
+  <p id="status" role="status" aria-live="polite"></p>
+  <p class="hint"><a id="setup" href="setup.html">Mic / camera permissions</a> · <a href="editor.html" target="_blank">Editor</a></p>
+  <div id="recent-wrap" hidden><h2>Recent</h2><ul id="recent"></ul></div>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
