@@ -21,3 +21,7 @@ All files copied so far are listed below.
 | layoutMath.ts | src/components/video-editor/videoPlayback/layoutUtils.ts (pure helpers only, Pixi removed) | P2 |
 | wallpaperFill.ts | src/lib/exporter/frameRenderer.ts `setupBackground` + `configureHighQuality2DContext` | P2 |
 | webcamOverlay.ts | src/components/video-editor/webcamOverlay.ts | P3 |
+| cursorCanvas.ts | src/components/video-editor/videoPlayback/cursorRenderer.ts (Pixi removed; PixiCursorOverlay → CanvasCursorOverlay; ImageBitmap asset loading) | P4 |
+| cursorScale.ts, cursorViewport.ts, cursorSway.ts, frameMotionSample.ts, uploadedCursorAssets.ts | src/components/video-editor/videoPlayback/ (same names) | P4 |
+| directionalMotionBlur.ts | src/components/video-editor/videoPlayback/zoomTransform.ts (pure computeDirectionalMotionBlur only) | P4 |
+| ../../../static/cursors/** | src/assets/cursors/{tahoe,golden-gate}/ (full), macos/ + windows11/ (the 9 files each that uploadedCursorAssets.ts references), custom/minimal-cursor.svg | P4 |
