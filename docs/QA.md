@@ -208,8 +208,41 @@ Wall times are on this CPU-only box, about 14× realtime. Frames: `21-export-fra
 - The Browser-top section now sits *above* Background in the Scene panel, so the most-used control (wallpaper) moved down. Consider putting "Browser top" under Frame.
 - The webcam bubble defaults to a large size that covers about 20% of a 16:9 frame (`07-…png`). Recordly's default is smaller; consider about 15% of width.
 
+### Liz's review (2026-10-18), added after the pass
+
+**P1-10 · The UI font looks bad** · ⚡ (~20 min)
+- **What's wrong:** the editor and popup use the system default stack, which looks generic and uneven across OSes.
+- **Decision (Liz):** use **Geist Sans** for UI text and **Geist Mono** for numbers, timecodes and values (both OFL-1.1, by Vercel).
+- **Fix:** vendor the woff2 files under `static/fonts/` (the extension must work offline, so no CDN), declare `@font-face` in `static/ui.css`, set `--font-sans` / `--font-mono` on `:root`, and apply mono to slider values, the timecode and the timeline ruler. Add the OFL notice to `THIRD_PARTY_NOTICES.md`.
+
+**P1-11 · Four rail sections is too much; keep two at most** · ~1 h
+- **What's wrong:** Scene / Cursor / Webcam / Settings splits a handful of controls across four tabs. For a small tool that's more navigation than content.
+- **Decision (Liz):** two sections at most.
+- **Suggested split:** **Look** (background, frame, webcam on/off and corner) and **Motion** (zoom preset Focused/Smooth, cursor on/off, click effect). Everything else moves into the defaults. The zoom-block panel stays contextual, opening only when a zoom is selected. Or drop the rail entirely and use one scrolling panel with two headings.
+
+**P1-12 · Cut the options per parameter to the minimum** · ~1–2 h
+- **What's wrong:** most controls expose Recordly's full range, e.g. 4 click effects, 12 colours, 12 gradients, free sliders for shadow, radius, padding, blur and cursor size, and zoom levels 1.25×–5×.
+- **Decision (Liz):** tune the defaults so most users touch nothing, and keep as few choices as possible.
+- **Suggested direction:**
+  - Replace continuous sliders with 2–3 presets where possible, e.g. padding S/M/L, shadow on/off.
+  - Drop background blur, radius and cursor size from the UI and keep the tuned defaults.
+  - Click effect becomes on/off (ripple).
+  - Zoom level becomes 3 steps (1.5× / 1.8× / 2.5×).
+  - Webcam becomes on/off plus corner.
+  - Keep "Reset to defaults".
+
+**P1-13 · Backgrounds: too many, and the wrong ones** · ⚡ (~30 min)
+- **What's wrong:** the picker shows 5 images plus 12 gradients (7 of them render black, see P1-1) plus 12 flat colours, and the flat colours and gradients look cheap. Recordly ships 38 bundled images ([`24-recordly-wallpapers.png`](qa/24-recordly-wallpapers.png) is a contact sheet of all of them), and only 5 were taken.
+- **Decision (Liz):** take only the best-looking Recordly wallpapers and drop the rest.
+- **Suggested set (6):** `tahoe-light` (Recordly's own default, keep as default), `ipad-17-light`, `energy-19`, `cherrypop`, `sonoma-dark`, `bluerays`. That's two light, two warm and two dark, so any recording has a fitting backdrop.
+- **Fix:**
+  - Remove the Color and Gradient tabs, which also makes P1-1 moot.
+  - Keep "Upload custom".
+  - Copy the 6 files from Recordly `public/wallpapers/` into `static/wallpapers/` and delete the unused ones.
+  - The licence caveat in `THIRD_PARTY_NOTICES.md` still applies: these are Apple artwork.
+
 ## 3. Quick wins (each ≤ ~30 min)
-P1-1 (gradient parser), P1-2 (disable browser-top for tab recordings), P1-6 (raw stream id), P1-7 (empty/error states and disabled actions), P1-8 (cancel copy and locking during export), the quick half of P1-9 (shortcut hint, `Z`, Space), P1-5 (default and copy, once Liz decides), P2-1, P2-2, P2-4, P2-5, P2-8, P2-9.
+P1-1 (gradient parser), P1-2 (disable browser-top for tab recordings), P1-6 (raw stream id), P1-7 (empty/error states and disabled actions), P1-8 (cancel copy and locking during export), the quick half of P1-9 (shortcut hint, `Z`, Space), P1-5 (default and copy, once Liz decides), P2-1, P2-2, P2-4, P2-5, P2-8, P2-9, P1-10 (fonts), P1-13 (backgrounds).
 
 ## Artifacts
 - **Screenshots:** `docs/qa/*.png` (01, 04–23, 09b, 10, 13b, 19b). The real-recording walk is 01–23; the fixture-editor walk is 09/09b/10/13b/19b.
