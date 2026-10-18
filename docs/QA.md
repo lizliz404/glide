@@ -231,15 +231,55 @@ Wall times are on this CPU-only box, about 14× realtime. Frames: `21-export-fra
   - Webcam becomes on/off plus corner.
   - Keep "Reset to defaults".
 
-**P1-13 · Backgrounds: too many, and the wrong ones** · ⚡ (~30 min)
-- **What's wrong:** the picker shows 5 images plus 12 gradients (7 of them render black, see P1-1) plus 12 flat colours, and the flat colours and gradients look cheap. Recordly ships 38 bundled images ([`24-recordly-wallpapers.png`](qa/24-recordly-wallpapers.png) is a contact sheet of all of them), and only 5 were taken.
-- **Decision (Liz):** take only the best-looking Recordly wallpapers and drop the rest.
-- **Suggested set (6):** `tahoe-light` (Recordly's own default, keep as default), `ipad-17-light`, `energy-19`, `cherrypop`, `sonoma-dark`, `bluerays`. That's two light, two warm and two dark, so any recording has a fitting backdrop.
+**P1-13 · Backgrounds: drop our own gradients and colours, ship all of Recordly's wallpapers** · ⚡ (~30 min)
+- **What's wrong:** the picker shows 5 Recordly images plus 12 gradients (7 render black, see P1-1) plus 12 flat colours. The gradients and flat colours look cheap. Recordly bundles 39 wallpapers, all of which look good ([`24-recordly-wallpapers.png`](qa/24-recordly-wallpapers.png) is a contact sheet of the images).
+- **Decision (Liz):** don't add backgrounds of our own. Take **every** wallpaper Recordly ships, as-is. Both projects are open source.
 - **Fix:**
-  - Remove the Color and Gradient tabs, which also makes P1-1 moot.
+  - Remove the Color and Gradient tabs and the `GRADIENTS` / `COLORS` presets in `src/editor/main.ts`. This also makes P1-1 moot.
+  - Copy all files below from Recordly `public/wallpapers/` @ e4a9d04 into `static/wallpapers/`, in Recordly's order. Keep `tahoe-light.jpg` as the default (Recordly's `DEFAULT_WALLPAPER_PATH`).
+  - `wispysky.mp4` is a video wallpaper. Include it if the renderer can draw a looping video background; otherwise list it as a follow-up.
   - Keep "Upload custom".
-  - Copy the 6 files from Recordly `public/wallpapers/` into `static/wallpapers/` and delete the unused ones.
-  - The licence caveat in `THIRD_PARTY_NOTICES.md` still applies: these are Apple artwork.
+  - Update `THIRD_PARTY_NOTICES.md` with the full list. The Apple-artwork caveat still applies.
+- **Full list (39 files):**
+  - `bluerays.jpeg`
+  - `cherrypop.jpg`
+  - `cityscape.jpg`
+  - `energy-17.jpg`
+  - `energy-19.jpg`
+  - `farmvalley.jpg`
+  - `glassmorphism-3.jpg`
+  - `glassmorphism-4.jpg`
+  - `ipad-17-dark.jpg`
+  - `ipad-17-light.jpg`
+  - `iridescent-9.jpg`
+  - `lemonade.jpeg`
+  - `levels.jpg`
+  - `luisdelrio.jpg`
+  - `midnight-8.jpg`
+  - `mountaintrees.jpg`
+  - `sequoia-blue-orange.jpg`
+  - `sequoia-blue.jpg`
+  - `sonoma-clouds.jpg`
+  - `sonoma-dark.jpg`
+  - `sonoma-evening.jpg`
+  - `sonoma-horizon.jpg`
+  - `sonoma-light.jpg`
+  - `tahoe-dark.jpg`
+  - `tahoe-light.jpg`
+  - `ventura-dark.jpg`
+  - `ventura.jpg`
+  - `wallpaper1.jpg`
+  - `wallpaper10.jpg`
+  - `wallpaper11.jpg`
+  - `wallpaper12.jpg`
+  - `wallpaper13.jpg`
+  - `wallpaper15.jpg`
+  - `wallpaper2.jpg`
+  - `wallpaper3.jpg`
+  - `wallpaper4.jpg`
+  - `wallpaper7.jpg`
+  - `wallpaper9.jpg`
+  - `wispysky.mp4`
 
 ## 3. Quick wins (each ≤ ~30 min)
 P1-1 (gradient parser), P1-2 (disable browser-top for tab recordings), P1-6 (raw stream id), P1-7 (empty/error states and disabled actions), P1-8 (cancel copy and locking during export), the quick half of P1-9 (shortcut hint, `Z`, Space), P1-5 (default and copy, once Liz decides), P2-1, P2-2, P2-4, P2-5, P2-8, P2-9, P1-10 (fonts), P1-13 (backgrounds).
