@@ -12,11 +12,9 @@ Glide is licensed under the GNU AGPL-3.0 (see `LICENSE`) because most of its edi
 
 ## Wallpaper provenance
 
-Glide ships **19 of the 38 image wallpapers Recordly bundles** (`public/wallpapers/` @ `e4a9d04`), copied byte-exact into `static/wallpapers/`, because that is the product decision recorded in `docs/QA.md` (P1-13: Recordly's backgrounds only, none of our own; trimmed to half on 2026-10-18, keeping `tahoe-light` and every `wallpaper*` file plus 7 random others). Recordly ships its wallpaper files without a stated licence or source, and **Recordly's AGPL-3.0 covers its code, not these images** — they are third-party artwork redistributed as-is.
+Glide ships **19 of the 38 image wallpapers Recordly bundles** (`public/wallpapers/` @ `e4a9d04`), copied byte-exact into `static/wallpapers/`, because that is the product decision recorded in `docs/QA.md` (P1-13: Recordly's backgrounds only, none of our own). Recordly ships its wallpaper files without a stated licence or source, and **Recordly's AGPL-3.0 covers its code, not these images** — they are third-party artwork redistributed as-is.
 
 The 19 shipped files, in the order Glide's picker shows them: `tahoe-light.jpg`, `midnight-8.jpg`, `sequoia-blue.jpg`, `sequoia-blue-orange.jpg`, `ventura.jpg`, `glassmorphism-3.jpg`, `wallpaper3.jpg`, `wallpaper4.jpg`, `cityscape.jpg`, `wallpaper10.jpg`, `iridescent-9.jpg`, `wallpaper1.jpg`, `wallpaper2.jpg`, `wallpaper7.jpg`, `wallpaper9.jpg`, `wallpaper11.jpg`, `wallpaper12.jpg`, `wallpaper13.jpg`, `wallpaper15.jpg`.
-
-Removed on 2026-10-18 (19): `bluerays.jpeg`, `cherrypop.jpg`, `energy-17.jpg`, `energy-19.jpg`, `farmvalley.jpg`, `glassmorphism-4.jpg`, `ipad-17-dark.jpg`, `ipad-17-light.jpg`, `lemonade.jpeg`, `levels.jpg`, `luisdelrio.jpg`, `mountaintrees.jpg`, `sonoma-clouds.jpg`, `sonoma-dark.jpg`, `sonoma-evening.jpg`, `sonoma-horizon.jpg`, `sonoma-light.jpg`, `tahoe-dark.jpg`, `ventura-dark.jpg`.
 
 Not shipped: `wispysky.mp4`, Recordly's one video wallpaper. Glide's renderer (`src/vendor/recordly/wallpaperFill.ts`) draws images, colours and gradients only, and a video source would paint black. Adding it needs a video-background path in the renderer — follow-up, tracked in `docs/QA.md` P1-13.
 

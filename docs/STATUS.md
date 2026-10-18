@@ -202,7 +202,7 @@ All values are Recordly's (`projectPersistence.ts`, `types.ts`, `cursorMotionPre
 - **New recording pointer telemetry is disabled until source identity is verified.** The content-script path remains, but the recorder rejects all unknown-source events. Therefore new captures have no automatic click zooms or post-rendered cursor effects. Manual zooms and imported/saved telemetry still work.
 - **Native cursor behaviour varies by browser.** Window/screen captures may bake in the OS cursor; showing a drawn cursor cannot remove a baked-in one or create missing telemetry.
 - **Artwork license risk. The repo is public.**
-  - 19 of the 38 upstream wallpapers are bundled (trimmed by half on 2026-10-18). Some resemble Apple artwork; others have unknown provenance. Cursor sets (`tahoe`, `golden-gate`, `macos`, `windows11`) also carry Apple/Microsoft-derived-artwork risk. Recordly supplies no separate artwork licence; AGPL code licensing does not establish image rights.
+  - 19 of the 38 upstream wallpapers are bundled. Some resemble Apple artwork; others have unknown provenance. Cursor sets (`tahoe`, `golden-gate`, `macos`, `windows11`) also carry Apple/Microsoft-derived-artwork risk. Recordly supplies no separate artwork licence; AGPL code licensing does not establish image rights.
   - Publishing them in a public repo is a copyright risk. Replace them with CC0 or self-made assets, or make the repo private.
   - Code licensing is fine: AGPL-3.0, with Recordly credited in the UI and repo, and Glide not branded as Recordly.
 - **Linux MP4 audio is Opus.** Chrome on Linux has no AAC encoder in WebCodecs. Most players handle Opus in MP4, but some editors (for example CapCut) don't. Fix without re-encoding the video:

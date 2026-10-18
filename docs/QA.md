@@ -243,7 +243,7 @@ Wall times are on this CPU-only box, about 14× realtime. Frames: `21-export-fra
 **P1-13 · Backgrounds: drop our own gradients and colours, ship all of Recordly's wallpapers** · ⚡ (~30 min)
 - **What's wrong:** the picker shows 5 Recordly images plus 12 gradients (7 render black, see P1-1) plus 12 flat colours. The gradients and flat colours look cheap. Recordly bundles 39 wallpapers, all of which look good ([`24-recordly-wallpapers.png`](qa/24-recordly-wallpapers.png) is a contact sheet of the images).
 - **Decision (Liz):** don't add backgrounds of our own. Take **every** wallpaper Recordly ships, as-is. Both projects are open source.
-- **Update (Liz, 2026-10-18 afternoon):** 39 is too many. Keep half: `tahoe-light` (default) and every `wallpaper*` file, plus 7 picked at random from the rest. Done in code; the 19 removed files are listed in `THIRD_PARTY_NOTICES.md`.
+- **Update (Liz, 2026-10-18 afternoon):** 39 is too many. Keep half: `tahoe-light` (default) and every `wallpaper*` file, plus 7 picked at random from the rest. Done in code.
 - **Original fix:**
   - Remove the Color and Gradient tabs and the `GRADIENTS` / `COLORS` presets in `src/editor/main.ts`. This also makes P1-1 moot.
   - Copy all files below from Recordly `public/wallpapers/` @ e4a9d04 into `static/wallpapers/`, in Recordly's order. Keep `tahoe-light.jpg` as the default (Recordly's `DEFAULT_WALLPAPER_PATH`).
