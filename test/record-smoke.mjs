@@ -1,5 +1,6 @@
 // Smoke test of the real recording path (offscreen document + getDisplayMedia + fake mic/cam),
-// using Chrome's auto-accept flags. Pointer logging is not covered (needs a host-permission grant).
+// using Chrome's auto-accept flags and host access in an isolated extension copy.
+// PAGE_MODE=1 exercises the real popup → visible recorder route (without real desktop/media).
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import puppeteer from "puppeteer-core";
@@ -33,7 +34,37 @@ try {
 	const popup = await browser.newPage();
 	await popup.goto(`chrome-extension://${extId}/popup.html`);
 	await target.bringToFront();
-	const start = await popup.evaluate((SURFACE) => chrome.runtime.sendMessage({ target: "background", type: "start", opts: { mic: true, camera: true, surface: SURFACE } }), process.env.SURFACE ?? "browser");
+	let start;
+	if (process.env.PAGE_MODE) {
+		// Permission prompts only resolve from a visible page, even with fake devices.
+		await popup.bringToFront();
+		await popup.evaluate(async () => {
+			const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+			stream.getTracks().forEach((track) => track.stop());
+		});
+		await popup.select("#surface", "browser");
+		await popup.click("#start");
+		const recorder = await (await browser.waitForTarget((t) => t.url().includes("/recorder.html?page="), { timeout: 10000 })).page();
+		await recorder.waitForSelector("#start");
+		// A cancelled picker leaves the page. A second start must reuse it, not open another listener.
+		const again = await browser.newPage();
+		await again.goto(`chrome-extension://${extId}/popup.html`);
+		await again.select("#surface", "browser");
+		await again.click("#start");
+		await new Promise((r) => setTimeout(r, 800));
+		const recorders = (await browser.pages()).filter((p) => p.url().includes("/recorder.html?page="));
+		if (recorders.length !== 1) throw new Error(`expected 1 recorder page, saw ${recorders.length}`);
+		if (!again.isClosed()) await again.close().catch(() => {});
+		if (recorder.isClosed()) throw new Error("existing recorder was closed instead of reused");
+		await recorder.bringToFront();
+		await recorder.click("#start");
+		await target.bringToFront();
+		await recorder.waitForFunction(() => /Recording |Timeout|Error/.test(document.querySelector("#status").textContent), { timeout: 20000 });
+		const text = await recorder.$eval("#status", (e) => e.textContent);
+		start = { ok: text.startsWith("Recording "), text };
+	} else {
+		start = await popup.evaluate((SURFACE) => chrome.runtime.sendMessage({ target: "background", type: "start", opts: { mic: true, camera: true, surface: SURFACE } }), process.env.SURFACE ?? "browser");
+	}
 	console.log("start:", JSON.stringify(start));
 	if (!start?.ok) throw new Error("start failed");
 	await target.bringToFront();
@@ -48,6 +79,13 @@ try {
 	await ctl.goto(`chrome-extension://${extId}/setup.html`);
 	const status = await ctl.evaluate(() => chrome.runtime.sendMessage({ target: "background", type: "status" }));
 	console.log("status:", JSON.stringify(status));
+	if (!status?.recording) throw new Error("active recorder incorrectly reported as stopped");
+	if (process.env.PAGE_MODE) {
+		const checkPopup = await browser.newPage();
+		await checkPopup.goto(`chrome-extension://${extId}/popup.html`);
+		await checkPopup.waitForSelector("#stop:not([hidden])");
+		await checkPopup.close();
+	}
 	const stop = await ctl.evaluate(() => chrome.runtime.sendMessage({ target: "background", type: "stop" }));
 	console.log("stop:", JSON.stringify(stop));
 	const edTarget = await editorOpened;
@@ -59,6 +97,7 @@ try {
 	if (!n.events || !n.clicks) throw new Error("no pointer events captured");
 } catch (e) {
 	console.error("FAIL", e.message);
+	console.error("open pages:", (await browser.pages()).map((p) => p.url()).join(" | "));
 	code = 1;
 } finally {
 	await browser.close();

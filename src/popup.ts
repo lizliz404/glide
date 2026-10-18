@@ -16,7 +16,7 @@ async function restore() {
 	if (glideOpts) {
 		mic.checked = glideOpts.mic;
 		camera.checked = glideOpts.camera;
-		surface.value = glideOpts.surface;
+		if (glideOpts.surface) surface.value = glideOpts.surface;
 	}
 	const st = await bg<{ recording: boolean; since: number; events: number }>({ type: "status" });
 	setRecording(!!st?.recording, st?.since);
@@ -63,6 +63,13 @@ startBtn.addEventListener("click", async () => {
 	}
 	// Host access is optional and only used to log pointer positions while recording.
 	await chrome.permissions.request({ origins: ["<all_urls>"] }).catch(() => false);
+	// Tab and window capture need a visible page: tab capture stalls offscreen, and a
+	// window recording has to follow the tabs the user switches to. Screen stays offscreen.
+	if (opts.surface === "browser" || opts.surface === "window") {
+		await bg({ type: "prepare-page", opts });
+		window.close();
+		return;
+	}
 	status.textContent = "Pick what to share in Chrome's dialog…";
 	startBtn.disabled = true;
 	const res = await bg<{ ok: boolean; error?: string; pointer?: boolean }>({ type: "start", opts });
@@ -74,7 +81,7 @@ startBtn.addEventListener("click", async () => {
 	}
 	// Some Chrome builds refuse getDisplayMedia from an offscreen document without a direct
 	// user gesture. Fall back to a visible recorder tab with its own Start button.
-	if (res?.error && /NotAllowed|InvalidState|user gesture|activation/i.test(res.error)) {
+	if (res?.error && /NotAllowed|InvalidState|user gesture|activation|Timeout starting video source/i.test(res.error)) {
 		await bg({ type: "prepare-page", opts });
 		window.close();
 		return;
@@ -85,7 +92,15 @@ startBtn.addEventListener("click", async () => {
 stopBtn.addEventListener("click", async () => {
 	stopBtn.disabled = true;
 	status.textContent = "Saving…";
-	await bg({ type: "stop" });
+	const res = await bg<{ ok?: boolean; error?: string }>({ type: "stop" }).catch((err: unknown) => ({
+		ok: false,
+		error: err instanceof Error ? err.message : "Could not stop",
+	}));
+	if (res && res.ok === false) {
+		stopBtn.disabled = false;
+		status.textContent = res.error ?? "Could not stop";
+		return;
+	}
 	window.close();
 });
 

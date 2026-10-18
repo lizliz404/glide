@@ -71,6 +71,13 @@ label.inline { margin: 0; gap: 6px; color: var(--muted); }
 .timeline-panel { border-top: 1px solid var(--line); background: var(--panel); padding: 6px 16px 10px; }
 .tl-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .tl-toolbar .hint { margin: 0; }
+.trim-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.trim-controls .mono { font-size: 12px; color: var(--text); }
+.trim-excluded { position: absolute; top: 0; bottom: 0; background: rgba(9,11,16,.8); pointer-events: none; }
+#trim-before { left: 0; border-right: 1px solid var(--accent); }
+#trim-after { right: 0; border-left: 1px solid var(--accent); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 1100px) { .tl-toolbar { flex-wrap: wrap; } .trim-controls { margin-left: auto; } }
 .timeline { position: relative; user-select: none; cursor: pointer; border-radius: 8px; padding-bottom: 4px; }
 .ruler { position: relative; height: 18px; font-size: 10px; color: var(--muted); }
 .ruler span { position: absolute; top: 2px; transform: translateX(-50%); font-variant-numeric: tabular-nums; }

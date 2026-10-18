@@ -1,8 +1,9 @@
 // One compositor for preview and export (what you see is what you export). Per frame it does what
 // Recordly's FrameRenderer.renderFrame does: layout -> camera (SceneCamera = updateAnimationState)
 // -> background + camera-transformed video layer with the cursor inside it -> webcam bubble on top.
-import type { CursorTelemetryPoint, ZoomRegion } from "../vendor/recordly/types";
+import { DEFAULT_CROP_REGION, type CropRegion, type CursorTelemetryPoint, type ZoomRegion } from "../vendor/recordly/types";
 import { SceneCamera, type CameraTransform } from "./camera";
+import { projectSceneForCrop } from "./browserView";
 import { CursorLayer } from "./cursor";
 import { computeFrameLayout } from "./frame";
 import { renderFrame, type Ctx2D } from "./render";
@@ -14,6 +15,8 @@ export interface SceneData {
 	regions: ZoomRegion[];
 	videoW: number;
 	videoH: number;
+	/** Visible source crop. Absent means the full frame. Original telemetry/regions stay uncropped. */
+	crop?: CropRegion;
 }
 
 export interface FrameSources {
@@ -50,8 +53,10 @@ export class Compositor {
 		const s = this.settings;
 		const vw = scene.videoW || 16;
 		const vh = scene.videoH || 9;
-		const { mask } = computeFrameLayout(W, H, vw, vh, s.frame);
-		const camera = this.camera.step(timeMs, { width: W, height: H }, mask, scene.telemetry, scene.regions, snap);
+		const crop = scene.crop ?? DEFAULT_CROP_REGION;
+		const projected = projectSceneForCrop(scene.telemetry, scene.regions, crop);
+		const { mask } = computeFrameLayout(W, H, vw, vh, s.frame, crop);
+		const camera = this.camera.step(timeMs, { width: W, height: H }, mask, projected.telemetry, projected.regions, snap);
 		this.lastCamera = camera;
 		renderFrame(ctx, W, H, {
 			screen: src.screen,
@@ -60,7 +65,8 @@ export class Compositor {
 			bgImage: s.frame.background.kind === "image" ? src.bgImage : null,
 			style: s.frame,
 			camera,
-			drawCursor: s.cursor.show && scene.telemetry.length ? (c, vp) => this.cursor.draw(c, scene.telemetry, timeMs, vp) : undefined,
+			crop,
+			drawCursor: s.cursor.show && projected.telemetry.length ? (c, vp) => this.cursor.draw(c, projected.telemetry, timeMs, vp) : undefined,
 			drawWebcam: src.cam && s.webcam.enabled ? (c, w, h, z) => drawWebcamBubble(c, w, h, src.cam, src.camW, src.camH, s.webcam, z) : undefined,
 		});
 		return camera;

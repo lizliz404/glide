@@ -4,10 +4,11 @@
 <body class="popup">
   <h1 class="brand">Glide</h1>
   <label>Capture <select id="surface">
-    <option value="browser">Tab (best: cursor + zoom)</option>
-    <option value="window">Browser window (all tabs)</option>
+    <option value="window" selected>Window — follows tabs in this window</option>
+    <option value="browser">Single tab — stays locked to that tab</option>
     <option value="monitor">Entire screen</option>
   </select></label>
+  <p class="hint" id="surface-note">Window records the browser chrome too. Hide the top later in the editor; the picker can still choose something else.</p>
   <label class="check"><input id="mic" type="checkbox" checked /> Microphone</label>
   <label class="check"><input id="camera" type="checkbox" checked /> Webcam</label>
   <button id="start" type="button" class="btn primary wide">Record</button>

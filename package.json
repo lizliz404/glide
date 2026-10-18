@@ -10,7 +10,8 @@
     "test": "npm run build && node test/e2e.mjs",
     "zip": "npm run build && cd dist && zip -qr ../glide-extension.zip .",
     "test:record": "npm run build && SURFACE=monitor HEADFUL=1 xvfb-run -a -s '-screen 0 1920x1080x24' node test/record-smoke.mjs",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "test:project": "npm run build && node test/editor-persistence.mjs"
   },
   "license": "AGPL-3.0-only",
   "type": "module",

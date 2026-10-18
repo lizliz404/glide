@@ -33,7 +33,7 @@ function pickMime(kind: "video" | "camera") {
 	return list.find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
 }
 
-async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string; name?: string }> {
+async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string; name?: string; surface?: Surface; requested?: Surface }> {
 	if (session) return { ok: false, error: "Already recording" };
 	const streams: MediaStream[] = [];
 	try {
@@ -115,12 +115,14 @@ async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string
 		screenRec.start(1000);
 		await started;
 		s.startedAt = Date.now();
-		return { ok: true, name: vTrack.label };
+		return { ok: true, name: vTrack.label, surface: s.surface, requested: opts.surface };
 	} catch (err) {
 		for (const st of streams) for (const t of st.getTracks()) t.stop();
 		session = null;
 		const e = err as DOMException;
-		return { ok: false, error: `${e.name}: ${e.message}` };
+		const error = `${e.name}: ${e.message}`;
+		void chrome.runtime.sendMessage({ target: "background", type: "failed", error, page: isPage }).catch(() => {});
+		return { ok: false, error };
 	}
 }
 
@@ -194,16 +196,33 @@ if (isPage) {
 	const opts: RecordOptions = {
 		mic: p.get("mic") !== "0",
 		camera: p.get("camera") !== "0",
-		surface: (p.get("surface") as Surface) || "browser",
+		surface: (p.get("surface") as Surface) || "window",
 	};
+	const lead = document.getElementById("lead");
+	if (lead) {
+		lead.textContent =
+			opts.surface === "window"
+				? "Click start, then choose this browser window. Recording follows tab switches in that window. Chrome's picker can still choose a tab or screen instead."
+				: opts.surface === "browser"
+					? "Click start, then choose one tab. That capture stays locked to the tab; it does not follow switches."
+					: "Click start, then choose a screen in Chrome's dialog.";
+	}
 	btn.addEventListener("click", async () => {
+		if (session?.stopping) return;
 		if (session) {
 			btn.disabled = true;
 			status.textContent = "Saving…";
-			await stop();
+			try {
+				await stop();
+			} catch (err) {
+				btn.disabled = false;
+				status.textContent = err instanceof Error ? err.message : "Could not save";
+			}
 			return;
 		}
+		btn.disabled = true;
 		const res = await start(opts);
+		btn.disabled = false;
 		if (!res.ok) {
 			status.textContent = res.error ?? "Could not start";
 			return;
@@ -211,6 +230,10 @@ if (isPage) {
 		await chrome.storage.local.set({ glideRecording: true });
 		await chrome.action.setBadgeText({ text: "REC" });
 		btn.textContent = "Stop and edit";
-		status.textContent = `Recording ${res.name ?? ""}. Keep this tab open; switch tabs freely.`;
+		status.textContent = res.surface === "window"
+			? `Recording ${res.name ?? ""}. Tab switches inside the selected window are recorded. Keep this recorder open; hide the browser top later in the editor.`
+			: res.surface === "browser"
+				? `Recording ${res.name ?? ""}. This captures one tab only. To record tab switches, stop and choose a browser window.`
+				: `Recording ${res.name ?? ""}. Keep this recorder open. The selected screen is being recorded.`;
 	});
 }

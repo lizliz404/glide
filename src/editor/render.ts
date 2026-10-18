@@ -3,9 +3,12 @@
 // (setupBackground), a camera-transformed video layer clipped by the squircle mask (the Pixi
 // cameraContainer with layoutVideoContent's mask), composited with sceneEffects' stacked drop-shadows
 // (compositeWithShadows ≈L1679), and the webcam bubble drawn last, outside the camera transform.
+// Static preblur inspired by src/lib/exporter/modernFrameRenderer.ts:
+// setupBackground / createPreblurredBackgroundCanvas (Recordly).
 import { getSquirclePathPoints } from "../vendor/recordly/squircle";
 import { getSceneEffectMetrics, type SceneEffectMetrics } from "../vendor/recordly/sceneEffects";
 import { configureHighQuality2DContext, paintWallpaper } from "../vendor/recordly/wallpaperFill";
+import { DEFAULT_CROP_REGION, type CropRegion } from "../vendor/recordly/types";
 import { backgroundToWallpaper, computeFrameLayout, type FrameLayout, type FrameStyle, type Rect } from "./frame";
 
 export type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -28,6 +31,8 @@ export interface RenderFrameInput {
 	bgImage: CanvasImageSource | null;
 	style: FrameStyle;
 	camera: RenderCamera;
+	/** Visible source crop. Absent means the full frame. */
+	crop?: CropRegion;
 	/** Called INSIDE the camera transform with the mask rect (stage px, pre-zoom). */
 	drawCursor?: (ctx: Ctx2D, viewport: Rect) => void;
 	/** Called last, outside the camera transform. */
@@ -40,8 +45,13 @@ export interface RenderFrameInput {
 interface Scratch {
 	bg: AnyCanvas;
 	bgCtx: Ctx2D;
-	bgKey: string;
+	bgKey: string | null;
 	bgImage: CanvasImageSource | null;
+	bgImageW: number;
+	bgImageH: number;
+	blurredBg: AnyCanvas | null;
+	blurredBgCtx: Ctx2D | null;
+	bgBlurPx: number;
 	layer: AnyCanvas;
 	layerCtx: Ctx2D;
 	clip: Path2D | null;
@@ -50,7 +60,7 @@ interface Scratch {
 	bgKind: string;
 	fxKey: [number, number, number];
 	fx: SceneEffectMetrics | null;
-	layoutKey: [number, number, number, number, number, number];
+	layoutKey: [number, number, number, number, number, number, number, number, number, number];
 	layout: FrameLayout | null;
 }
 
@@ -76,8 +86,10 @@ function scratchFor(ctx: Ctx2D, W: number, H: number): Scratch {
 		const bg = makeCanvas(W, H);
 		const layer = makeCanvas(W, H);
 		s = {
-			bg, bgCtx: get2d(bg), bgKey: "", bgImage: null, layer, layerCtx: get2d(layer), clip: null, clipKey: "",
-			bgKind: "", fxKey: [NaN, NaN, NaN], fx: null, layoutKey: [NaN, NaN, NaN, NaN, NaN, NaN], layout: null,
+			bg, bgCtx: get2d(bg), bgKey: null, bgImage: null, bgImageW: 0, bgImageH: 0,
+			blurredBg: null, blurredBgCtx: null, bgBlurPx: NaN,
+			layer, layerCtx: get2d(layer), clip: null, clipKey: "",
+			bgKind: "", fxKey: [NaN, NaN, NaN], fx: null, layoutKey: [NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN, NaN], layout: null,
 		};
 		scratchByCtx.set(ctx, s);
 	}
@@ -89,7 +101,8 @@ function scratchFor(ctx: Ctx2D, W: number, H: number): Scratch {
 		// Resizing resets context state.
 		configureHighQuality2DContext(s.bgCtx);
 		configureHighQuality2DContext(s.layerCtx);
-		s.bgKey = "";
+		s.bgKey = null;
+		s.bgBlurPx = NaN;
 		s.clipKey = "";
 	}
 	return s;
@@ -107,14 +120,17 @@ function sourceSize(src: CanvasImageSource): [number, number] {
 function ensureBackground(s: Scratch, W: number, H: number, style: FrameStyle, img: CanvasImageSource | null) {
 	const wallpaper = backgroundToWallpaper(style.background);
 	const kind = style.background.kind;
-	if (s.bgKey === wallpaper && s.bgKind === kind && img === s.bgImage) return;
+	const [iw, ih] = kind === "image" && img ? sourceSize(img) : [0, 0];
+	if (s.bgKey === wallpaper && s.bgKind === kind && img === s.bgImage && iw === s.bgImageW && ih === s.bgImageH) return;
 	s.bgKey = wallpaper;
 	s.bgKind = kind;
 	s.bgImage = img;
+	s.bgImageW = iw;
+	s.bgImageH = ih;
+	s.bgBlurPx = NaN;
 	const ctx = s.bgCtx;
 	ctx.clearRect(0, 0, W, H);
 	if (kind === "image") {
-		const [iw, ih] = img ? sourceSize(img) : [0, 0];
 		if (!img || !iw || !ih) {
 			// Still loading (or failed): Recordly's black fallback, without logging every load.
 			ctx.fillStyle = "#000000";
@@ -125,6 +141,33 @@ function ensureBackground(s: Scratch, W: number, H: number, style: FrameStyle, i
 		return;
 	}
 	paintWallpaper(ctx, W, H, wallpaper, null);
+}
+
+/** Cache the final static background using exactly the live compositor's blur and overscan. */
+function backgroundCanvas(s: Scratch, W: number, H: number, effects: SceneEffectMetrics): AnyCanvas {
+	const blur = effects.backgroundBlurPx;
+	if (blur <= 0) return s.bg;
+	if (!s.blurredBg) {
+		s.blurredBg = makeCanvas(W, H);
+		s.blurredBgCtx = get2d(s.blurredBg);
+	}
+	const ctx = s.blurredBgCtx!;
+	if (s.blurredBg.width !== W || s.blurredBg.height !== H) {
+		s.blurredBg.width = W;
+		s.blurredBg.height = H;
+		configureHighQuality2DContext(ctx);
+		s.bgBlurPx = NaN;
+	}
+	if (s.bgBlurPx !== blur) {
+		ctx.clearRect(0, 0, W, H);
+		ctx.save();
+		const overscan = effects.backgroundOverscanPx;
+		ctx.filter = `blur(${blur}px)`;
+		ctx.drawImage(s.bg, -overscan, -overscan, W + overscan * 2, H + overscan * 2);
+		ctx.restore();
+		s.bgBlurPx = blur;
+	}
+	return s.blurredBg;
 }
 
 /** layoutVideoContent's mask, cached as a Path2D (stage coords; the camera transform is applied on top). */
@@ -167,23 +210,20 @@ function renderScene(ctx: Ctx2D, W: number, H: number, inp: RenderFrameInput): v
 
 	// Step 1: background layer (optional blur, not affected by zoom).
 	ensureBackground(s, W, H, style, inp.bgImage);
-	if (sceneEffects.backgroundBlurPx > 0) {
-		ctx.save();
-		const overscan = sceneEffects.backgroundOverscanPx;
-		ctx.filter = `blur(${sceneEffects.backgroundBlurPx}px)`;
-		ctx.drawImage(s.bg, -overscan, -overscan, W + overscan * 2, H + overscan * 2);
-		ctx.restore();
-	} else {
-		ctx.drawImage(s.bg, 0, 0, W, H);
-	}
+	ctx.drawImage(backgroundCanvas(s, W, H, sceneEffects), 0, 0, W, H);
 
 	// Step 2: video layer = Pixi cameraContainer (scale + position) holding the masked video and cursor.
 	const vw = inp.videoW || 16;
 	const vh = inp.videoH || 9;
+	const crop = inp.crop ?? DEFAULT_CROP_REGION;
 	const lk = s.layoutKey;
-	if (!s.layout || lk[0] !== W || lk[1] !== H || lk[2] !== vw || lk[3] !== vh || lk[4] !== style.padding || lk[5] !== style.borderRadius) {
+	if (
+		!s.layout || lk[0] !== W || lk[1] !== H || lk[2] !== vw || lk[3] !== vh || lk[4] !== style.padding || lk[5] !== style.borderRadius
+		|| lk[6] !== crop.x || lk[7] !== crop.y || lk[8] !== crop.width || lk[9] !== crop.height
+	) {
 		lk[0] = W; lk[1] = H; lk[2] = vw; lk[3] = vh; lk[4] = style.padding; lk[5] = style.borderRadius;
-		s.layout = computeFrameLayout(W, H, vw, vh, style);
+		lk[6] = crop.x; lk[7] = crop.y; lk[8] = crop.width; lk[9] = crop.height;
+		s.layout = computeFrameLayout(W, H, vw, vh, style, crop);
 	}
 	const layout = s.layout;
 	const lc = s.layerCtx;

@@ -4,6 +4,20 @@ Last updated 2026-10-18 (Asia/Shanghai), at `main` after the Recordly port (v0.2
 
 Glide is a Chrome MV3 extension that records a tab, window or screen with mic and webcam. Its editor is a browser port of [Recordly](https://github.com/webadderallorg/Recordly) (AGPL-3.0), copied from commit **`e4a9d04860f4cbad3358bda3ac4a2307489f1d03`** (2026-10-17). This page records what's done, what was copied from where, what we decided and why, and what's still missing.
 
+## Editing and capture additions (2026-10-18)
+
+These changes are included in this source revision; this is not a deployment or release receipt.
+
+- New installations default to **Window — follows tabs in this window**. Window and single-tab modes start from a visible recorder page. Chrome's picker remains authoritative: selecting a single tab still locks capture to that tab.
+- **Scene → Browser top → Hide browser top in export** is an independent, reversible per-recording edit. Adjust **Top height** in source-video pixels to remove the tab strip, address bar and toolbar. Preview and export share Recordly's existing crop-layout path; original media/zoom coordinates remain intact. A content-only recording cannot restore absent browser chrome. The current height is constant for the recording, not automatic detection of changing browser layouts/fullscreen.
+- Per-recording zoom edits, retained start/end, and browser-top presentation survive reload in localStorage. Raw imports have no stable project identity and do not overwrite saved recording edits. No IndexedDB schema change.
+- MP4/WebM trimming preserves source-time screen/webcam/cursor/zoom synchronization, rebases output timestamps, and clips boundary PCM samples. Static blurred backgrounds are cached; no proven overall export speedup.
+- Visible recorder reuse/status/stop handling improved. Do not use active-tab state as proof that a recorder owns an active recording.
+
+Verification of these additions: 188 unit tests pass; typecheck/build pass; browser editor reload/trim/browser-top isolation passes; visible single-tab recording/reuse/save/editor passes with fake devices. A synthetic top-band source was actually exported to MP4 with the band present, absent after crop, and restored in preview. Native window-follow acceptance is **not yet verified**: an isolated X11 Chromium window-selection probe timed out; the fake-media test does not count as proof of real cross-tab window pixels. No user-monitor capture was used as a substitute.
+
+The sections below describe the original Recordly port unless noted.
+
 Contents: [Done](#done) · [Copied from Recordly](#copied-from-recordly-file-by-file) · [Design decisions](#design-decisions-and-what-we-learned) · [Defaults](#defaults) · [Gaps, todos and warnings](#gaps-todos-and-warnings)
 
 ## Done
@@ -164,13 +178,12 @@ All values are Recordly's (`projectPersistence.ts`, `types.ts`, `cursorMotionPre
 ### Not ported
 - **Zoom motion blur** and **cursor motion blur**: Pixi/WebGL filters in Recordly.
 - **Device frames**, **captions**, **annotations**.
-- **Crop** and unlinked (per-side) padding.
-- **Trim / cut** and speed edits.
+- General **Crop** controls and unlinked (per-side) padding. Browser-top crop is described above.
+- Interior **cut** and speed edits. Start/end trim is described above.
 - Advanced zoom-curve controls (durations, curves, overlap): only reachable through the Focused/Smooth presets.
 
 ### Todos
-- **Persist zoom edits** with the recording (IndexedDB). Today they're lost on reload and zooms are re-suggested; settings do persist.
-- Trim/cut and crop on the timeline.
+- Interior cuts and general crop on the timeline; retained-range trim and browser-top crop are implemented above.
 - Port motion blur (a WebGL pass, or a Canvas 2D approximation).
 - Faster export: cache the shadowed frame layer when the camera is still, and add a 60 fps option.
 - Optional true-circle webcam toggle.

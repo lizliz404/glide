@@ -22,6 +22,9 @@ import { exportVideo, makeSeekable, type ExportResult } from "./export";
 import { computeFrameLayout, WALLPAPERS } from "./frame";
 import { applyMotionPreset, defaultSettings, loadSettings, outputSize, saveSettings, type Aspect, type GlideSettings } from "./settings";
 import { toTelemetry } from "./telemetry";
+import { loadProjectZooms, loadProjectTrim, loadProjectBrowserView, saveProjectZooms } from "./project";
+import { browserCrop, normalizeBrowserView } from "./browserView";
+import { fullTrim, setTrimEdge, type TrimRange } from "./trim";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("stage");
@@ -62,8 +65,11 @@ const state = {
 	events: [] as PointerEvt[],
 	telemetry: [] as CursorTelemetryPoint[],
 	regions: [] as ZoomRegion[],
+	projectId: null as string | null,
 	selectedId: null as string | null,
 	durationMs: 0,
+	trim: fullTrim(0),
+	browserView: normalizeBrowserView(null),
 	bgImage: null as HTMLImageElement | null,
 	bgUrl: "",
 	section: "scene",
@@ -75,7 +81,8 @@ const fmt = (ms: number) => {
 	return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 };
 const currentMs = () => screenVid.currentTime * 1000;
-const scene = () => ({ telemetry: state.telemetry, regions: state.regions, videoW: screenVid.videoWidth || state.meta?.width || 0, videoH: screenVid.videoHeight || state.meta?.height || 0 });
+const scene = () => ({ telemetry: state.telemetry, regions: state.regions, videoW: screenVid.videoWidth || state.meta?.width || 0, videoH: screenVid.videoHeight || state.meta?.height || 0,
+	crop: browserCrop(state.browserView, screenVid.videoHeight || state.meta?.height || 0) });
 const hasCam = () => !!state.camBlob;
 
 // ------------------------------------------------------------------------------------------------
@@ -123,6 +130,12 @@ function draw(snap: boolean) {
 const redraw = () => screenVid.paused && draw(true);
 
 function loop() {
+	if (currentMs() >= state.trim.endMs) {
+		screenVid.pause();
+		camVid.pause();
+		seekTo(state.trim.endMs);
+		return;
+	}
 	draw(false);
 	if (!screenVid.paused) requestAnimationFrame(loop);
 }
@@ -255,6 +268,31 @@ function bindControls() {
 	range("frame-radius", () => S().frame.borderRadius, (v) => (S().frame.borderRadius = v), (v) => v.toFixed(1));
 	range("frame-padding", () => S().frame.padding, (v) => (S().frame.padding = v), (v) => `${Math.round(v)}%`);
 
+	// Presentation is recording-scoped, independent of capture mode and global styling.
+	const hideTop = $<HTMLInputElement>("browser-hide-top");
+	const topPx = $<HTMLInputElement>("browser-top-px");
+	const syncBrowserView = () => {
+		hideTop.checked = state.browserView.hideTop;
+		hideTop.disabled = !state.screenBlob;
+		$("browser-top-controls").hidden = !state.browserView.hideTop;
+		topPx.max = String(Math.max(0, (screenVid.videoHeight || state.meta?.height || 1) - 1));
+		topPx.value = String(Math.min(state.browserView.topPx, Number(topPx.max)));
+		document.querySelector<HTMLOutputElement>('output[for="browser-top-px"]')!.value = `${topPx.value} px`;
+		$("browser-top-hint").textContent = state.meta?.surface === "browser"
+			? "This single-tab recording has no real browser top to restore. For tab switching and both export views, record the whole browser window."
+			: "Keep or hide the recorded tab strip, address bar and toolbar. Adjust height to your browser; this also changes the preview. The source stays intact.";
+	};
+	const browserViewChanged = () => {
+		state.browserView = normalizeBrowserView({ hideTop: hideTop.checked, topPx: Number(topPx.value) });
+		saveProject();
+		syncBrowserView();
+		comp.reset();
+		if (screenVid.readyState >= 2) draw(true);
+	};
+	hideTop.addEventListener("change", () => { topPx.value = String(state.browserView.topPx); browserViewChanged(); });
+	topPx.addEventListener("input", browserViewChanged);
+	bindings.push({ sync: syncBrowserView });
+
 	// Cursor
 	check("cursor-show", () => S().cursor.show, (v) => {
 		S().cursor.show = v;
@@ -379,8 +417,15 @@ function showSection(id: string) {
 // ------------------------------------------------------------------------------------------------
 // Zoom regions + timeline
 
+function saveProject() {
+	if (state.projectId && !saveProjectZooms(state.projectId, state.durationMs, state.regions, undefined, state.trim, state.browserView)) {
+		status("Edits could not be saved. Keep this tab open to avoid losing them.");
+	}
+}
+
 function regionsChanged() {
 	state.regions.sort((a, b) => a.startMs - b.startMs);
+	saveProject();
 	drawTimeline();
 	syncZoomPanel();
 	redraw();
@@ -415,7 +460,6 @@ function runSuggestions() {
 	regionsChanged();
 }
 
-let regionSeq = 0;
 function addZoomAtPlayhead() {
 	const t = Math.round(currentMs());
 	const next = state.regions.find((r) => r.startMs > t);
@@ -423,7 +467,7 @@ function addZoomAtPlayhead() {
 	if (inside) return selectRegion(inside.id);
 	const end = Math.min(state.durationMs, next ? next.startMs : Number.POSITIVE_INFINITY, t + NEW_REGION_MS);
 	if (end - t < MIN_REGION_MS) return status("No room for a zoom here");
-	const r: ZoomRegion = { id: `zoom-${++regionSeq}`, startMs: t, endMs: end, depth: DEFAULT_ZOOM_DEPTH, focus: { cx: 0.5, cy: 0.5 }, mode: "auto" };
+	const r: ZoomRegion = { id: `zoom-${crypto.randomUUID()}`, startMs: t, endMs: end, depth: DEFAULT_ZOOM_DEPTH, focus: { cx: 0.5, cy: 0.5 }, mode: "auto" };
 	state.regions.push(r);
 	regionsChanged();
 	selectRegion(r.id);
@@ -468,7 +512,24 @@ function drawTimeline() {
 	const tl = $("timeline");
 	tl.setAttribute("aria-valuemax", String(Math.round(d)));
 	$("seg-count").textContent = `${state.regions.length} zoom${state.regions.length === 1 ? "" : "s"} · ${state.telemetry.filter((p) => p.interactionType && p.interactionType !== "move" && p.interactionType !== "mouseup").length} clicks`;
+	syncTrimControls();
 	updatePlayhead(currentMs());
+}
+
+function syncTrimControls() {
+	const { startMs, endMs } = state.trim;
+	$("trim-before").style.width = pctOf(startMs);
+	$("trim-after").style.width = pctOf(Math.max(0, state.durationMs - endMs));
+	$("trim-range").textContent = `${fmt(startMs)}–${fmt(endMs)} · ${fmt(endMs - startMs)} kept`;
+	$<HTMLButtonElement>("trim-reset").disabled = startMs === 0 && endMs === state.durationMs;
+	for (const id of ["trim-start", "trim-end"]) $<HTMLButtonElement>(id).disabled = !state.screenBlob;
+}
+
+function changeTrim(trim: TrimRange) {
+	state.trim = trim;
+	saveProject();
+	syncTrimControls();
+	if (currentMs() < trim.startMs || currentMs() > trim.endMs) seekTo(trim.startMs);
 }
 
 function updatePlayhead(t: number) {
@@ -544,6 +605,9 @@ function bindTimeline() {
 	});
 	$("add-zoom").addEventListener("click", addZoomAtPlayhead);
 	$("suggest-zooms").addEventListener("click", runSuggestions);
+	$("trim-start").addEventListener("click", () => changeTrim(setTrimEdge(state.trim, "start", currentMs(), state.durationMs)));
+	$("trim-end").addEventListener("click", () => changeTrim(setTrimEdge(state.trim, "end", currentMs(), state.durationMs)));
+	$("trim-reset").addEventListener("click", () => changeTrim(fullTrim(state.durationMs)));
 	// Manual focus: click the preview while a manual zoom is selected (inverse of the camera transform).
 	canvas.addEventListener("click", (e) => {
 		const r = state.regions.find((x) => x.id === state.selectedId);
@@ -555,9 +619,11 @@ function bindTimeline() {
 		const lx = (px - cam.x) / cam.scale;
 		const ly = (py - cam.y) / cam.scale;
 		const sc = scene();
-		const { mask } = computeFrameLayout(canvas.width, canvas.height, sc.videoW || 16, sc.videoH || 9, state.settings.frame);
+		const { mask } = computeFrameLayout(canvas.width, canvas.height, sc.videoW || 16, sc.videoH || 9, state.settings.frame, sc.crop);
 		const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
-		r.focus = { cx: clamp01((lx - mask.x) / mask.width), cy: clamp01((ly - mask.y) / mask.height) };
+		// Persist original-source focus, so toggling the crop cannot drift a manual zoom.
+		r.focus = { cx: sc.crop.x + clamp01((lx - mask.x) / mask.width) * sc.crop.width,
+			cy: sc.crop.y + clamp01((ly - mask.y) / mask.height) * sc.crop.height };
 		regionsChanged();
 	});
 }
@@ -567,7 +633,7 @@ function bindTransport() {
 	const toggle = () => {
 		if (!state.screenBlob) return;
 		if (screenVid.paused) {
-			if (screenVid.ended || currentMs() >= state.durationMs - 30) seekTo(0);
+			if (screenVid.ended || currentMs() < state.trim.startMs || currentMs() >= state.trim.endMs - 30) seekTo(state.trim.startMs);
 			void screenVid.play();
 			if (hasCam()) void camVid.play();
 			requestAnimationFrame(loop);
@@ -658,6 +724,7 @@ function runExport(container: "mp4" | "webm", onProgress?: (p: number) => void, 
 		scene: structuredClone(scene()),
 		settings: structuredClone(state.settings),
 		durationMs: state.durationMs,
+		trim: structuredClone(state.trim),
 		onProgress,
 		signal,
 	});
@@ -666,28 +733,54 @@ function runExport(container: "mp4" | "webm", onProgress?: (p: number) => void, 
 // ------------------------------------------------------------------------------------------------
 // Loading
 
-async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, events: PointerEvt[]) {
+let loadGeneration = 0;
+let screenUrl = "";
+let camUrl = "";
+async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, events: PointerEvt[], projectId: string | null = null) {
+	const generation = ++loadGeneration;
+	delete document.body.dataset.ready;
+	screenVid.pause();
+	camVid.pause();
+	// Detach the old project BEFORE an asynchronous import, so imports can't overwrite it.
+	state.projectId = null;
+	state.selectedId = null;
+	state.regions = [];
 	status("Preparing recording…");
 	const s = await makeSeekable(screen);
 	const c = cam ? await makeSeekable(cam) : null;
+	if (generation !== loadGeneration) return;
 	state.meta = meta;
 	state.screenBlob = s.blob;
 	state.camBlob = c?.blob ?? null;
 	state.events = events;
 	state.durationMs = s.durationMs || meta.durationMs;
+	state.trim = (projectId ? loadProjectTrim(projectId, state.durationMs) : null) ?? fullTrim(state.durationMs);
+	state.browserView = projectId ? loadProjectBrowserView(projectId, state.durationMs) : normalizeBrowserView(null);
 	const surface: Surface = meta.surface ?? "browser";
 	state.telemetry = toTelemetry(events, surface, state.durationMs);
 	// Tab capture has no OS cursor baked in; window/screen capture usually does.
 	if (!localStorage.getItem("glide.cursorTouched")) state.settings.cursor.show = surface === "browser";
 	const loaded = new Promise((r) => screenVid.addEventListener("loadeddata", r, { once: true }));
-	screenVid.src = URL.createObjectURL(s.blob);
-	if (c) camVid.src = URL.createObjectURL(c.blob);
+	if (screenUrl) URL.revokeObjectURL(screenUrl);
+	if (camUrl) URL.revokeObjectURL(camUrl);
+	screenVid.src = screenUrl = URL.createObjectURL(s.blob);
+	camUrl = c ? URL.createObjectURL(c.blob) : "";
+	if (camUrl) camVid.src = camUrl;
+	else {
+		camVid.removeAttribute("src");
+		camVid.load();
+	}
 	await loaded;
-	// useFreshRecordingAutoZoom: a fresh recording gets Recordly's click-driven suggestions once.
-	if (state.settings.autoApplyZooms) runSuggestions();
+	if (generation !== loadGeneration) return;
+	// Like Recordly, restore a project before considering fresh-recording suggestions.
+	const savedZooms = projectId ? loadProjectZooms(projectId, state.durationMs) : null;
+	if (savedZooms !== null) state.regions = savedZooms;
+	state.projectId = projectId;
+	if (savedZooms === null && state.settings.autoApplyZooms) runSuggestions();
 	else regionsChanged();
 	settingsChanged({ rebind: true });
 	await preloadCursorAssets().catch(() => {});
+	if (generation !== loadGeneration) return;
 	comp.reset();
 	draw(true);
 	const clicks = state.telemetry.filter((p) => p.interactionType !== "move" && p.interactionType !== "mouseup").length;
@@ -704,7 +797,7 @@ async function init() {
 		if (id) {
 			const b = await loadRecording(id);
 			if (!b) throw new Error(`Recording ${id} not found`);
-			await loadBundle(b.meta, b.screen, b.camera, b.events);
+			await loadBundle(b.meta, b.screen, b.camera, b.events, id);
 		} else if (p.get("src")) {
 			// Dev/test entry: editor.html?src=screen.webm&cam=cam.webm&events=events.json
 			const [screen, cam, ev] = await Promise.all([

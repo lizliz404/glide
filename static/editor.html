@@ -36,6 +36,12 @@
 
   <aside class="panel" aria-label="Settings panel">
     <section id="panel-scene" role="tabpanel" aria-labelledby="tab-scene">
+      <h2>Browser top</h2>
+      <label class="check"><input id="browser-hide-top" type="checkbox" /> Hide browser top in export</label>
+      <div id="browser-top-controls" hidden>
+        <label>Top height <input id="browser-top-px" type="range" min="0" max="500" step="1" /><output for="browser-top-px"></output></label>
+      </div>
+      <p id="browser-top-hint" class="hint">Record the whole browser window to follow tab switches. Keep or hide its tab strip, address bar and toolbar here. Preview matches export.</p>
       <h2>Background</h2>
       <div class="segmented" role="radiogroup" aria-label="Background type">
         <button type="button" role="radio" data-bg-tab="image" aria-checked="true">Image</button>
@@ -141,11 +147,16 @@
     <button id="suggest-zooms" type="button" class="btn small ghost">Suggest Zooms</button>
     <span id="seg-count" class="hint"></span>
     <span class="spacer"></span>
-    <span class="hint">Space play/pause · ←/→ seek · Delete removes the selected zoom</span>
+    <div class="trim-controls" role="group" aria-label="Retained video range">
+      <button id="trim-start" type="button" class="btn small ghost" title="Keep from the playhead">Set start</button>
+      <button id="trim-end" type="button" class="btn small ghost" title="Keep up to the playhead">Set end</button>
+      <span id="trim-range" class="mono" role="status"></span>
+      <button id="trim-reset" type="button" class="btn small ghost" disabled>Reset trim</button>
+    </div>
   </div>
   <div id="timeline" class="timeline" role="slider" tabindex="0" aria-label="Playhead" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
     <div id="ruler" class="ruler"></div>
-    <div class="track clip-track"><div class="clip">Recording</div><div id="clicks" class="clicks"></div></div>
+    <div class="track clip-track"><div class="clip">Recording</div><div id="clicks" class="clicks"></div><div id="trim-before" class="trim-excluded" aria-hidden="true"></div><div id="trim-after" class="trim-excluded" aria-hidden="true"></div></div>
     <div id="zoom-track" class="track zoom-track" aria-label="Zoom regions"></div>
     <div id="playhead" class="playhead"></div>
   </div>
