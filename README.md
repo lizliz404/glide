@@ -12,6 +12,8 @@ You get all of this with zero tuning, then export MP4 or WebM. No native app, no
 Why the browser: picking screens/windows, mic and camera permissions, and Wayland portals are the painful part of native recorders on Linux. Chrome solves all of that with one share dialog. If what you're demoing is a web page or a `localhost` app, a tab is all you need, and in a tab the extension sees every click precisely.
 
 > Status: v0.2, the Recordly port. Recording, editing and export work end to end. **[docs/STATUS.md](docs/STATUS.md)** covers what's done, the file-by-file list of what was copied from Recordly, design decisions, and the remaining gaps and warnings.
+>
+> Open issues from the latest QA/UX/PM pass on `3f5638b` (P1 should fix, P2 polish, with repro, screenshots and suggested fixes): **[docs/QA.md](docs/QA.md)**.
 
 ## Install on Arch / Omarchy
 
