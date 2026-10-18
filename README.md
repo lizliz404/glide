@@ -47,7 +47,7 @@ To update: `git pull && npm install && npm run build`, then click the reload ico
 
 The editor has two sections, **Look** and **Motion**, plus a contextual Zoom panel and a full-width timeline. UI text uses self-hosted Geist Sans; timecodes and values use Geist Mono.
 
-- **Look**: 38 static Recordly wallpapers + Upload Custom, three padding presets, shadow toggle, cursor and webcam controls. Browser-top crop is reversible for window/screen recordings and disabled for known single-tab recordings, which have no browser chrome. Aspect ratio sits under the preview. The upstream video wallpaper is not supported.
+- **Look**: 19 Recordly wallpapers (half of its 38 image set) + Upload Custom, three padding presets, shadow toggle, cursor and webcam controls. Browser-top crop is reversible for window/screen recordings and disabled for known single-tab recordings, which have no browser chrome. Aspect ratio sits under the preview. The upstream video wallpaper is not supported.
 - **Motion**: Focused / Smooth presets, zoom defaults and Reset to defaults. Full internal settings remain backward compatible, but fine-tuning ranges are hidden.
 - **Timeline**:
   - Purple blocks are zooms and white ticks are clicks. Click or drag the ruler to seek.
@@ -107,7 +107,7 @@ editor tab: IndexedDB → Mediabunny remux (seekable) → telemetry → Recordly
 
 | Part | Source |
 | --- | --- |
-| Auto-zoom suggestions, zoom region timing and easing, follow camera, scene/zoom transform, springs, motion presets, padded layout, squircle, scene shadows, wallpaper fill, webcam overlay geometry and shadow, cursor renderer (smoothing, bounce, sway, click effects), cursor assets, 38 static wallpapers | **Copied from [Recordly](https://github.com/webadderallorg/Recordly) (AGPL-3.0) @ `e4a9d04`** into `src/vendor/recordly/`, Pixi/Electron/React parts removed. See `src/vendor/recordly/README.md`. |
+| Auto-zoom suggestions, zoom region timing and easing, follow camera, scene/zoom transform, springs, motion presets, padded layout, squircle, scene shadows, wallpaper fill, webcam overlay geometry and shadow, cursor renderer (smoothing, bounce, sway, click effects), cursor assets, 19 of its 38 wallpapers | **Copied from [Recordly](https://github.com/webadderallorg/Recordly) (AGPL-3.0) @ `e4a9d04`** into `src/vendor/recordly/`, Pixi/Electron/React parts removed. See `src/vendor/recordly/README.md`. |
 | Defaults, editor layout, control labels and ranges, gradient and color presets | Mirrored from Recordly's `projectPersistence.ts`, `EditorShell.tsx`, `EditorSidebar.tsx`, `SettingsPanel.tsx` and `en/settings.json` |
 | WebM demux, WebCodecs decode/encode, MP4/WebM mux, remux to seekable WebM | **[Mediabunny](https://mediabunny.dev)** (MPL-2.0, unmodified npm dependency) |
 | Offscreen-document recording, tab-capture pattern | Chrome's official guide and samples (links below) |

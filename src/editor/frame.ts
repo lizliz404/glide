@@ -25,7 +25,7 @@ export interface FrameStyle {
 /**
  * Recordly src/lib/wallpapers.ts: createWallpaperEntry(fileName, label) -> { id, label, relativePath }.
  *
- * All 38 image wallpapers from Recordly's `public/wallpapers/` @ e4a9d04, copied byte-exact into
+ * 19 of the 38 image wallpapers from Recordly's `public/wallpapers/` @ e4a9d04, copied byte-exact into
  * `static/wallpapers/` (Liz, 2026-10-18: ship every Recordly wallpaper, add none of our own).
  * Order: Recordly's own picker order (`BUILT_IN_WALLPAPERS`) first, then the images that sit in that
  * folder without a picker entry, alphabetically; the labels for those follow Recordly's
@@ -36,35 +36,16 @@ export interface FrameStyle {
  */
 export const WALLPAPERS: { id: string; label: string; url: string }[] = [
 	{ id: "tahoe-light", label: "Tahoe Light", url: "wallpapers/tahoe-light.jpg" },
-	{ id: "tahoe-dark", label: "Tahoe Dark", url: "wallpapers/tahoe-dark.jpg" },
 	{ id: "midnight-8", label: "Midnight 8", url: "wallpapers/midnight-8.jpg" },
-	{ id: "ipad-17-dark", label: "iPad 17 Dark", url: "wallpapers/ipad-17-dark.jpg" },
-	{ id: "ipad-17-light", label: "iPad 17 Light", url: "wallpapers/ipad-17-light.jpg" },
 	{ id: "sequoia-blue", label: "Sequoia Blue", url: "wallpapers/sequoia-blue.jpg" },
 	{ id: "sequoia-blue-orange", label: "Sequoia Blue Orange", url: "wallpapers/sequoia-blue-orange.jpg" },
 	{ id: "ventura", label: "Ventura", url: "wallpapers/ventura.jpg" },
-	{ id: "sonoma-clouds", label: "Sonoma Clouds", url: "wallpapers/sonoma-clouds.jpg" },
-	{ id: "sonoma-light", label: "Sonoma Light", url: "wallpapers/sonoma-light.jpg" },
-	{ id: "sonoma-dark", label: "Sonoma Dark", url: "wallpapers/sonoma-dark.jpg" },
 	{ id: "glassmorphism-3", label: "Glassmorphism 3", url: "wallpapers/glassmorphism-3.jpg" },
-	{ id: "glassmorphism-4", label: "Glassmorphism 4", url: "wallpapers/glassmorphism-4.jpg" },
-	{ id: "energy-19", label: "Energy 19", url: "wallpapers/energy-19.jpg" },
 	{ id: "wallpaper3", label: "Wallpaper 3", url: "wallpapers/wallpaper3.jpg" },
 	{ id: "wallpaper4", label: "Wallpaper 4", url: "wallpapers/wallpaper4.jpg" },
 	{ id: "cityscape", label: "Cityscape", url: "wallpapers/cityscape.jpg" },
-	{ id: "levels", label: "Levels", url: "wallpapers/levels.jpg" },
 	{ id: "wallpaper10", label: "Wallpaper 10", url: "wallpapers/wallpaper10.jpg" },
-	{ id: "ventura-dark", label: "Ventura Dark", url: "wallpapers/ventura-dark.jpg" },
-	{ id: "sonoma-evening", label: "Sonoma Evening", url: "wallpapers/sonoma-evening.jpg" },
-	{ id: "sonoma-horizon", label: "Sonoma Horizon", url: "wallpapers/sonoma-horizon.jpg" },
 	{ id: "iridescent-9", label: "Iridescent 9", url: "wallpapers/iridescent-9.jpg" },
-	{ id: "energy-17", label: "Energy 17", url: "wallpapers/energy-17.jpg" },
-	{ id: "bluerays", label: "Bluerays", url: "wallpapers/bluerays.jpeg" },
-	{ id: "cherrypop", label: "Cherrypop", url: "wallpapers/cherrypop.jpg" },
-	{ id: "farmvalley", label: "Farmvalley", url: "wallpapers/farmvalley.jpg" },
-	{ id: "lemonade", label: "Lemonade", url: "wallpapers/lemonade.jpeg" },
-	{ id: "luisdelrio", label: "Luisdelrio", url: "wallpapers/luisdelrio.jpg" },
-	{ id: "mountaintrees", label: "Mountaintrees", url: "wallpapers/mountaintrees.jpg" },
 	{ id: "wallpaper1", label: "Wallpaper 1", url: "wallpapers/wallpaper1.jpg" },
 	{ id: "wallpaper2", label: "Wallpaper 2", url: "wallpapers/wallpaper2.jpg" },
 	{ id: "wallpaper7", label: "Wallpaper 7", url: "wallpapers/wallpaper7.jpg" },

@@ -16,9 +16,9 @@ describe("FRAME_DEFAULTS / WALLPAPERS", () => {
 		});
 	});
 
-	it("ships all 38 static Recordly wallpapers as real files, default first", () => {
-		expect(WALLPAPERS).toHaveLength(38);
-		expect(new Set(WALLPAPERS.map((w) => w.id)).size).toBe(38);
+	it("ships the 19 kept Recordly wallpapers as real files, default first", () => {
+		expect(WALLPAPERS).toHaveLength(19);
+		expect(new Set(WALLPAPERS.map((w) => w.id)).size).toBe(19);
 		expect(WALLPAPERS[0].id).toBe("tahoe-light");
 		expect(WALLPAPERS.map((w) => w.url.replace("wallpapers/", "")).sort())
 			.toEqual(readdirSync("static/wallpapers").sort());
