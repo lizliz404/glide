@@ -3,6 +3,7 @@
 import type { CropRegion, CursorTelemetryPoint, ZoomFocus, ZoomRegion } from "../vendor/recordly/types";
 import { DEFAULT_CROP_REGION } from "../vendor/recordly/types";
 import { projectCursorPositionToViewport } from "../vendor/recordly/cursorViewport";
+import type { Surface } from "../shared/types";
 
 export interface BrowserView {
 	hideTop: boolean;
@@ -31,8 +32,13 @@ export function normalizeBrowserView(value: unknown): BrowserView {
 /**
  * Top strip of the source frame, as a Recordly CropRegion. A crop that would leave no picture
  * (topPx >= videoHeight) stays the full frame.
+ *
+ * `surface` is optional: callers that do not know the source keep the original behaviour, and so do
+ * raw imports. A known single-tab capture ("browser") has no browser chrome, so it is always the
+ * full frame — this also neutralises an old project that persisted hideTop: true for a tab.
  */
-export function browserCrop(view: BrowserView, videoHeight: number): CropRegion {
+export function browserCrop(view: BrowserView, videoHeight: number, surface?: Surface): CropRegion {
+	if (surface === "browser") return { ...DEFAULT_CROP_REGION };
 	const height = finite(videoHeight, 0);
 	if (!view.hideTop || !(view.topPx > 0) || !(height > view.topPx)) return { ...DEFAULT_CROP_REGION };
 	const y = view.topPx / height;

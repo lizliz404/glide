@@ -1,6 +1,6 @@
 // Glide editor: Recordly's editor flow in a browser page. Auto zoom regions on load
-// (useFreshRecordingAutoZoom), a timeline of zoom blocks, sidebar sections Scene / Cursor / Webcam /
-// Settings (EditorSidebar + SettingsPanel), and one compositor for preview and export.
+// (useFreshRecordingAutoZoom), a timeline of zoom blocks, sidebar sections Look / Motion plus a
+// contextual zoom panel (EditorSidebar + SettingsPanel), and one compositor for preview and export.
 import { loadRecording } from "../shared/db";
 import type { PointerEvt, RecordingMeta, Surface } from "../shared/types";
 import type { CursorMotionPresetId } from "../vendor/recordly/cursorMotionPresets";
@@ -19,7 +19,7 @@ import { suggestZoomRegions } from "./camera";
 import { Compositor } from "./compose";
 import { preloadCursorAssets } from "./cursor";
 import { exportVideo, makeSeekable, type ExportResult } from "./export";
-import { computeFrameLayout, WALLPAPERS } from "./frame";
+import { computeFrameLayout, FRAME_DEFAULTS, WALLPAPERS } from "./frame";
 import { applyMotionPreset, defaultSettings, loadSettings, outputSize, saveSettings, type Aspect, type GlideSettings } from "./settings";
 import { toTelemetry } from "./telemetry";
 import { loadProjectZooms, loadProjectTrim, loadProjectBrowserView, saveProjectZooms } from "./project";
@@ -37,22 +37,6 @@ for (const v of [screenVid, camVid]) {
 }
 camVid.muted = true;
 
-/** Recordly SettingsPanel GRADIENTS (first 12) and background colour presets. */
-const GRADIENTS = [
-	"linear-gradient( 111.6deg,  rgba(114,167,232,1) 9.4%, rgba(253,129,82,1) 43.9%, rgba(253,129,82,1) 54.8%, rgba(249,202,86,1) 86.3% )",
-	"linear-gradient(120deg, #d4fc79 0%, #96e6a1 100%)",
-	"radial-gradient( circle farthest-corner at 3.2% 49.6%,  rgba(80,12,139,0.87) 0%, rgba(161,10,144,0.72) 83.6% )",
-	"linear-gradient( 111.6deg,  rgba(0,56,68,1) 0%, rgba(163,217,185,1) 51.5%, rgba(231, 148, 6, 1) 88.6% )",
-	"linear-gradient( 107.7deg,  rgba(235,230,44,0.55) 8.4%, rgba(252,152,15,1) 90.3% )",
-	"linear-gradient( 91deg,  rgba(72,154,78,1) 5.2%, rgba(251,206,70,1) 95.9% )",
-	"radial-gradient( circle farthest-corner at 10% 20%,  rgba(2,37,78,1) 0%, rgba(4,56,126,1) 19.7%, rgba(85,245,221,1) 100.2% )",
-	"linear-gradient( 109.6deg,  rgba(15,2,2,1) 11.2%, rgba(36,163,190,1) 91.1% )",
-	"linear-gradient(135deg, #FBC8B4, #2447B1)",
-	"linear-gradient(109.6deg, #F635A6, #36D860)",
-	"linear-gradient(to top, #a18cd1 0%, #fbc2eb 100%)",
-	"linear-gradient(to right, #4facfe 0%, #00f2fe 100%)",
-];
-const COLORS = ["#FF0000", "#FFD700", "#00FF00", "#FFFFFF", "#0000FF", "#FF6B00", "#9B59B6", "#000000", "#111827", "#1E293B", "#F5F5F4", "#2563EB"];
 const POSITIONS: WebcamPositionPreset[] = ["top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"];
 const MIN_REGION_MS = 250;
 const NEW_REGION_MS = 1000;
@@ -75,6 +59,8 @@ const state = {
 	section: "scene",
 };
 const comp = new Compositor(state.settings);
+/** True while an export owns the page; export and file-import actions are locked out. */
+let exporting = false;
 const status = (msg: string) => ($("status").textContent = msg);
 const fmt = (ms: number) => {
 	const s = Math.max(0, ms / 1000);
@@ -82,7 +68,7 @@ const fmt = (ms: number) => {
 };
 const currentMs = () => screenVid.currentTime * 1000;
 const scene = () => ({ telemetry: state.telemetry, regions: state.regions, videoW: screenVid.videoWidth || state.meta?.width || 0, videoH: screenVid.videoHeight || state.meta?.height || 0,
-	crop: browserCrop(state.browserView, screenVid.videoHeight || state.meta?.height || 0) });
+	crop: browserCrop(state.browserView, screenVid.videoHeight || state.meta?.height || 0, state.meta?.surface) });
 const hasCam = () => !!state.camBlob;
 
 // ------------------------------------------------------------------------------------------------
@@ -209,15 +195,13 @@ function syncControls() {
 }
 
 const pct = (v: number) => `${Math.round(v * 100)}%`;
-let bgTab: "image" | "color" | "gradient" = state.settings.frame.background.kind;
 
 function syncPickers() {
+	// Older storage may still hold a colour or gradient background: it keeps rendering, but
+	// wallpapers are the only visible picker, so no swatch is checked until the user picks one.
 	const bg = state.settings.frame.background;
-	const value = bg.kind === "image" ? bg.url : bg.kind === "color" ? bg.color : bg.css;
-	for (const b of document.querySelectorAll<HTMLButtonElement>(".grid [role=radio]")) b.setAttribute("aria-checked", String(b.dataset.value === value));
-	for (const b of document.querySelectorAll<HTMLButtonElement>("[data-bg-tab]")) b.setAttribute("aria-checked", String(b.dataset.bgTab === bgTab));
-	for (const k of ["image", "color", "gradient"]) $(`bg-pane-${k}`).hidden = k !== bgTab;
-	$<HTMLInputElement>("click-color").closest("label")!.hidden = state.settings.cursor.clickEffect === "none";
+	const value = bg.kind === "image" ? bg.url : "";
+	for (const b of document.querySelectorAll<HTMLButtonElement>("#wallpapers [role=radio]")) b.setAttribute("aria-checked", String(b.dataset.value === value));
 	$("webcam-none").hidden = hasCam();
 }
 
@@ -240,29 +224,15 @@ function bindControls() {
 		S().frame.background = { kind: "image", url: w.url };
 		settingsChanged();
 	});
-	GRADIENTS.forEach((g, i) => swatch("gradients", g, g, `Gradient ${i + 1}`).addEventListener("click", () => {
-		S().frame.background = { kind: "gradient", css: g };
-		settingsChanged();
-	}));
-	for (const c of COLORS) swatch("colors", c, c, `Color ${c}`).addEventListener("click", () => {
-		S().frame.background = { kind: "color", color: c };
-		settingsChanged();
-	});
-	$<HTMLInputElement>("bg-color").addEventListener("input", (e) => {
-		S().frame.background = { kind: "color", color: (e.target as HTMLInputElement).value };
-		settingsChanged();
-	});
 	$<HTMLInputElement>("bg-upload").addEventListener("change", (e) => {
 		const f = (e.target as HTMLInputElement).files?.[0];
 		if (!f) return;
 		S().frame.background = { kind: "image", url: URL.createObjectURL(f) };
 		settingsChanged();
 	});
-	for (const b of document.querySelectorAll<HTMLButtonElement>("[data-bg-tab]"))
-		b.addEventListener("click", () => {
-			bgTab = b.dataset.bgTab as typeof bgTab;
-			syncPickers();
-		});
+	// Visible frame choices are presets; Recordly's full ranges stay bound and stored below.
+	check("frame-shadow-toggle", () => S().frame.shadowIntensity > 0, (v) => (S().frame.shadowIntensity = v ? FRAME_DEFAULTS.shadowIntensity : 0));
+	radios($("frame-padding-presets"), () => String(S().frame.padding), (v) => (S().frame.padding = Number(v)));
 	range("bg-blur", () => S().frame.backgroundBlur, (v) => (S().frame.backgroundBlur = v));
 	range("frame-shadow", () => S().frame.shadowIntensity, (v) => (S().frame.shadowIntensity = v), pct);
 	range("frame-radius", () => S().frame.borderRadius, (v) => (S().frame.borderRadius = v), (v) => v.toFixed(1));
@@ -272,14 +242,18 @@ function bindControls() {
 	const hideTop = $<HTMLInputElement>("browser-hide-top");
 	const topPx = $<HTMLInputElement>("browser-top-px");
 	const syncBrowserView = () => {
-		hideTop.checked = state.browserView.hideTop;
-		hideTop.disabled = !state.screenBlob;
-		$("browser-top-controls").hidden = !state.browserView.hideTop;
+		// A single-tab capture has no browser chrome, so the control is disabled and the render guard
+		// in browserCrop() keeps the full frame even when an old project persisted hideTop: true.
+		const tabCapture = state.meta?.surface === "browser";
+		hideTop.checked = !tabCapture && state.browserView.hideTop;
+		hideTop.disabled = !state.screenBlob || tabCapture;
+		topPx.disabled = !state.screenBlob || tabCapture;
+		$("browser-top-controls").hidden = tabCapture || !state.browserView.hideTop;
 		topPx.max = String(Math.max(0, (screenVid.videoHeight || state.meta?.height || 1) - 1));
 		topPx.value = String(Math.min(state.browserView.topPx, Number(topPx.max)));
 		document.querySelector<HTMLOutputElement>('output[for="browser-top-px"]')!.value = `${topPx.value} px`;
-		$("browser-top-hint").textContent = state.meta?.surface === "browser"
-			? "This single-tab recording has no real browser top to restore. For tab switching and both export views, record the whole browser window."
+		$("browser-top-hint").textContent = tabCapture
+			? "This is a single-tab recording, so there is no browser chrome to hide. Record a whole browser window to keep or hide the tab strip, address bar and toolbar."
 			: "Keep or hide the recorded tab strip, address bar and toolbar. Adjust height to your browser; this also changes the preview. The source stays intact.";
 	};
 	const browserViewChanged = () => {
@@ -350,7 +324,6 @@ function bindControls() {
 		const keepCursor = state.settings.cursor.show;
 		state.settings = defaultSettings();
 		state.settings.cursor.show = keepCursor;
-		bgTab = "image";
 		settingsChanged({ rebind: true });
 	});
 	const aspect = $<HTMLSelectElement>("aspect");
@@ -362,12 +335,13 @@ function bindControls() {
 
 	// Zoom panel
 	const depth = $("zoom-depth");
-	for (const d of Object.keys(ZOOM_DEPTH_SCALES)) {
+	// The three visible depths (2/3/4 = 1.5×/1.8×/2.2×); storage still accepts Recordly's 1–6.
+	for (const d of [2, 3, 4] as ZoomDepth[]) {
 		const b = document.createElement("button");
 		b.type = "button";
 		b.setAttribute("role", "radio");
-		b.dataset.value = d;
-		b.textContent = `${ZOOM_DEPTH_SCALES[Number(d) as ZoomDepth]}×`;
+		b.dataset.value = String(d);
+		b.textContent = `${ZOOM_DEPTH_SCALES[d]}×`;
 		depth.append(b);
 	}
 	const sel = () => state.regions.find((r) => r.id === state.selectedId) ?? null;
@@ -521,8 +495,17 @@ function syncTrimControls() {
 	$("trim-before").style.width = pctOf(startMs);
 	$("trim-after").style.width = pctOf(Math.max(0, state.durationMs - endMs));
 	$("trim-range").textContent = `${fmt(startMs)}–${fmt(endMs)} · ${fmt(endMs - startMs)} kept`;
-	$<HTMLButtonElement>("trim-reset").disabled = startMs === 0 && endMs === state.durationMs;
-	for (const id of ["trim-start", "trim-end"]) $<HTMLButtonElement>(id).disabled = !state.screenBlob;
+	syncActions();
+}
+
+/** File/export actions and trim affordances follow loaded media and the export lock. */
+function syncActions() {
+	const hasMedia = !!state.screenBlob;
+	for (const id of ["export-mp4", "export-webm"]) $<HTMLButtonElement>(id).disabled = !hasMedia || exporting;
+	for (const id of ["add-zoom", "suggest-zooms"]) $<HTMLButtonElement>(id).disabled = !hasMedia;
+	$<HTMLInputElement>("open-files").disabled = exporting;
+	for (const id of ["trim-start", "trim-end"]) $<HTMLButtonElement>(id).disabled = !hasMedia;
+	$<HTMLButtonElement>("trim-reset").disabled = !hasMedia || (state.trim.startMs === 0 && state.trim.endMs === state.durationMs);
 }
 
 function changeTrim(trim: TrimRange) {
@@ -658,10 +641,22 @@ function bindTransport() {
 	camVid.addEventListener("loadeddata", redraw);
 	document.addEventListener("keydown", (e) => {
 		const t = e.target as HTMLElement;
-		if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement) return;
-		if (e.code === "Space" && !(t instanceof HTMLButtonElement) && !t.closest(".zoom-block")) {
+		// Typing and widget keys keep their native behaviour: sliders, selects, checkboxes, radio
+		// groups and the timeline must not lose Space or the arrows to transport shortcuts.
+		if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement || t.isContentEditable) return;
+		const widget = !!t.closest('[role="radiogroup"], [role="radio"], [role="tablist"], #timeline');
+		if (e.code === "Space" && !widget) {
 			e.preventDefault();
+			if (t instanceof HTMLButtonElement) t.blur();
 			toggle();
+		} else if (!widget && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+			if (!state.screenBlob) return;
+			e.preventDefault();
+			seekTo(currentMs() + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 5000 : 1000));
+		} else if ((e.key === "z" || e.key === "Z") && !e.ctrlKey && !e.metaKey && !e.altKey) {
+			if (!state.screenBlob) return;
+			e.preventDefault();
+			addZoomAtPlayhead();
 		} else if ((e.key === "Delete" || e.key === "Backspace") && state.selectedId) {
 			e.preventDefault();
 			deleteSelected();
@@ -687,13 +682,20 @@ function bindTransport() {
 	const doExport = async (container: "mp4" | "webm") => {
 		if (!state.screenBlob || ctrl) return;
 		ctrl = new AbortController();
+		exporting = true;
+		syncActions();
+		const active = $<HTMLButtonElement>(`export-${container}`);
+		const label = active.textContent;
+		active.textContent = "Exporting…";
 		const prog = $<HTMLProgressElement>("progress");
 		prog.hidden = false;
+		prog.value = 0;
 		$("cancel").hidden = false;
 		const t0 = performance.now();
 		try {
 			const res = await runExport(container, (p) => {
 				prog.value = p;
+				active.textContent = `Exporting… ${Math.round(p * 100)}%`;
 				status(`Exporting ${container.toUpperCase()}… ${Math.round(p * 100)}%`);
 			}, ctrl.signal);
 			const a = document.createElement("a");
@@ -702,11 +704,14 @@ function bindTransport() {
 			a.click();
 			status(`Exported ${res.width}×${res.height} ${container.toUpperCase()} (${res.videoCodec}${res.audioCodec ? ` + ${res.audioCodec}` : ""}, ${(res.blob.size / 1e6).toFixed(1)} MB) in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
 		} catch (err) {
-			status(`Export failed: ${(err as Error).message}`);
+			status((err as Error).name === "AbortError" ? "Export cancelled" : `Export failed: ${(err as Error).message}`);
 		} finally {
 			ctrl = null;
+			exporting = false;
+			active.textContent = label;
 			prog.hidden = true;
 			$("cancel").hidden = true;
+			syncActions();
 		}
 	};
 	$("export-mp4").addEventListener("click", () => doExport("mp4"));
@@ -786,10 +791,12 @@ async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, e
 	const clicks = state.telemetry.filter((p) => p.interactionType !== "move" && p.interactionType !== "mouseup").length;
 	status(`${surface} capture · ${screenVid.videoWidth}×${screenVid.videoHeight} · ${fmt(state.durationMs)} · ${clicks} clicks → ${state.regions.length} zooms`);
 	document.body.dataset.ready = "1";
+	syncActions();
 }
 
 async function init() {
 	bindControls();
+	syncActions();
 	ensureBackgroundImage();
 	const p = new URLSearchParams(location.search);
 	const id = p.get("id");
@@ -815,14 +822,27 @@ async function init() {
 			status("Open files to start");
 		}
 	} catch (e) {
-		status(String(e));
+		const message = String(e);
+		status(message);
+		showEmptyState(`${message}. It was deleted or isn't on this device — import a video with Open files, or record again from the Glide toolbar button.`);
+		draw(true);
+		syncActions();
 	}
+}
+
+/** Visible recovery card. Text only: ids can come from the URL. */
+function showEmptyState(message: string) {
+	const empty = $("empty");
+	empty.hidden = false;
+	empty.setAttribute("role", "alert");
+	empty.querySelector("p")!.textContent = message;
 }
 
 // Test hook (used by test/e2e.mjs).
 (window as unknown as { glide: object }).glide = {
 	state,
 	camera: () => comp.lastCamera,
+	crop: () => scene().crop,
 	selectRegion: (id: string | null) => selectRegion(id),
 	seek: async (ms: number) => {
 		const vids = hasCam() ? [screenVid, camVid] : [screenVid];

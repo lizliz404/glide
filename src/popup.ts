@@ -11,6 +11,28 @@ const surface = $<HTMLSelectElement>("surface");
 
 const bg = <T = any>(msg: object) => chrome.runtime.sendMessage<object, T>({ target: "background", ...msg });
 
+const SURFACE_LABEL: Record<Surface, string> = { browser: "Tab", window: "Window", monitor: "Screen" };
+// One line per choice, so the note never describes a surface the user did not pick (P2-1).
+const SURFACE_NOTE: Record<Surface, string> = {
+	browser: "Stays locked to the tab you pick, with no browser chrome. Cleanest base for a demo.",
+	window: "Follows tab switches in one window, but the browser chrome and the real cursor are baked into the video. Crop the top later in the editor.",
+	monitor: "Records a whole screen, other apps included. The real cursor is baked into the video.",
+};
+const surfaceNote = $<HTMLParagraphElement>("surface-note");
+const syncSurfaceNote = () => {
+	surfaceNote.textContent = SURFACE_NOTE[surface.value as Surface] ?? SURFACE_NOTE.browser;
+};
+
+function timeAgo(at: number, now = Date.now()) {
+	const mins = Math.round(Math.max(0, now - at) / 60000);
+	if (mins < 1) return "just now";
+	if (mins < 60) return `${mins} min ago`;
+	const hours = Math.round(mins / 60);
+	if (hours < 24) return `${hours} h ago`;
+	const days = Math.round(hours / 24);
+	return days === 1 ? "yesterday" : `${days} days ago`;
+}
+
 async function restore() {
 	const { glideOpts } = (await chrome.storage.local.get("glideOpts")) as { glideOpts?: RecordOptions };
 	if (glideOpts) {
@@ -18,6 +40,7 @@ async function restore() {
 		camera.checked = glideOpts.camera;
 		if (glideOpts.surface) surface.value = glideOpts.surface;
 	}
+	syncSurfaceNote();
 	const st = await bg<{ recording: boolean; since: number; events: number }>({ type: "status" });
 	setRecording(!!st?.recording, st?.since);
 	const recent = await listRecordings().catch(() => []);
@@ -27,7 +50,7 @@ async function restore() {
 		const a = document.createElement("a");
 		a.href = `editor.html?id=${encodeURIComponent(r.id)}`;
 		a.target = "_blank";
-		a.textContent = `${new Date(r.createdAt).toLocaleString()} · ${(r.durationMs / 1000).toFixed(0)}s · ${r.surface}`;
+		a.textContent = `${SURFACE_LABEL[r.surface] ?? r.surface} · ${(r.durationMs / 1000).toFixed(0)}s · ${new Date(r.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} · ${timeAgo(r.createdAt)}`;
 		li.append(a);
 		ul.append(li);
 	}
@@ -76,7 +99,9 @@ startBtn.addEventListener("click", async () => {
 	startBtn.disabled = false;
 	if (res?.ok) {
 		setRecording(true, Date.now());
-		if (!res.pointer) status.textContent += " (no cursor data: site access not granted)";
+		// Zoom and cursor need pointer data, which Glide only keeps when it can prove which
+		// surface was captured (see src/shared/pointerScope.ts).
+		status.textContent += " Zoom and cursor effects are off: Glide cannot verify which tab or window is being recorded.";
 		return;
 	}
 	// Some Chrome builds refuse getDisplayMedia from an offscreen document without a direct
@@ -108,5 +133,7 @@ $("setup").addEventListener("click", (e) => {
 	e.preventDefault();
 	chrome.tabs.create({ url: "setup.html" });
 });
+
+surface.addEventListener("change", syncSurfaceNote);
 
 restore();

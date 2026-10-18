@@ -1,0 +1,35 @@
+{
+  "families": ["Geist", "Geist Mono"],
+  "copyright": "Copyright 2024 The Geist Project Authors (https://github.com/vercel/geist-font)",
+  "license": "SIL Open Font License 1.1 (see OFL.txt, upstream path OFL.txt)",
+  "upstream": "https://github.com/vercel/geist-font",
+  "commit": "10dc7658f13c38a474cde201bb09a4617267545b",
+  "retrieved": "2026-10-18",
+  "note": "Bytes are the unmodified upstream variable webfonts; local file names are URL-safe renames of the upstream names (brackets removed). Every file was verified against the git blob SHA-1 recorded by that commit's tree, not only against a download hash. No CDN is used at runtime: ui.css loads these files from the extension package.",
+  "files": [
+    {
+      "file": "Geist-Variable.woff2",
+      "upstreamPath": "fonts/Geist/webfonts/Geist[wght].woff2",
+      "url": "https://raw.githubusercontent.com/vercel/geist-font/10dc7658f13c38a474cde201bb09a4617267545b/fonts/Geist/webfonts/Geist%5Bwght%5D.woff2",
+      "bytes": 69760,
+      "sha256": "2ffebe993e969069a9789d15164b7715d42491b5835516c5e3b935d5f81b05f1",
+      "gitBlobSha1": "71dab8bedba3bfef5dccd7875ed05cac44c7345d"
+    },
+    {
+      "file": "GeistMono-Variable.woff2",
+      "upstreamPath": "fonts/GeistMono/webfonts/GeistMono[wght].woff2",
+      "url": "https://raw.githubusercontent.com/vercel/geist-font/10dc7658f13c38a474cde201bb09a4617267545b/fonts/GeistMono/webfonts/GeistMono%5Bwght%5D.woff2",
+      "bytes": 71596,
+      "sha256": "afaacc4c5fbba89d2ebf7a02dc4070208540874592a5504d57175782fe893101",
+      "gitBlobSha1": "0e746fc18223dfcb107a85502a0abe1b1a02d51a"
+    },
+    {
+      "file": "OFL.txt",
+      "upstreamPath": "OFL.txt",
+      "url": "https://raw.githubusercontent.com/vercel/geist-font/10dc7658f13c38a474cde201bb09a4617267545b/OFL.txt",
+      "bytes": 4383,
+      "sha256": "c683bfbcc7e087f5d37a54ef628f10387c451a83ddc459b151403a164ac46c90",
+      "gitBlobSha1": "04e95fc550855eb44416b9db1f6722f5cb7342db"
+    }
+  ]
+}

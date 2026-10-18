@@ -32,6 +32,16 @@ describe("browserCrop", () => {
 		expect(cropped.sprite.y).toBeCloseTo(cropped.mask.y - 0.1 * cropped.sprite.height);
 		expect(cropped.sprite.height).toBeCloseTo(full.sprite.height);
 	});
+
+	it("forces the full frame for a known single-tab capture, even with an old persisted crop", () => {
+		expect(browserCrop(view(), 1080, "browser")).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+		expect(browserCrop(view({ topPx: 200 }), 1080, "browser")).toEqual({ x: 0, y: 0, width: 1, height: 1 });
+	});
+
+	it("keeps cropping window captures and callers that do not know the surface", () => {
+		expect(browserCrop(view({ topPx: 108 }), 1080, "window")).toEqual({ x: 0, y: 0.1, width: 1, height: 0.9 });
+		expect(browserCrop(view({ topPx: 108 }), 1080)).toEqual({ x: 0, y: 0.1, width: 1, height: 0.9 });
+	});
 });
 
 describe("projectSceneForCrop", () => {
@@ -69,5 +79,11 @@ describe("projectSceneForCrop", () => {
 		expect(projected.telemetry).toEqual(telemetry);
 		expect(projected.regions[0].focus).toEqual(regions[0].focus);
 		expect(projected.telemetry).not.toBe(telemetry);
+	});
+
+	it("leaves scene coordinates alone when the guarded tab crop is full", () => {
+		const projected = projectSceneForCrop(telemetry, regions, browserCrop(view(), 1080, "browser"));
+		expect(projected.telemetry).toEqual(telemetry);
+		expect(projected.regions[0].focus).toEqual(regions[0].focus);
 	});
 });

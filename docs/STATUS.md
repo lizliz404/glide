@@ -4,11 +4,20 @@ Last updated 2026-10-18 (Asia/Shanghai), at `main` after the Recordly port (v0.2
 
 Glide is a Chrome MV3 extension that records a tab, window or screen with mic and webcam. Its editor is a browser port of [Recordly](https://github.com/webadderallorg/Recordly) (AGPL-3.0), copied from commit **`e4a9d04860f4cbad3358bda3ac4a2307489f1d03`** (2026-10-17). This page records what's done, what was copied from where, what we decided and why, and what's still missing.
 
-## Editing and capture additions (2026-10-18)
+## QA corrections (2026-10-18)
+
+- Default returns to **Single tab**; window capture remains an explicit option. Surface hints update with the selected mode; status no longer exposes raw capture IDs.
+- **Pointer-scope safety trade-off:** new recordings discard all pointer events while captured-source identity is unknown. This prevents cross-tab contamination but temporarily removes automatic zooms and post-rendered cursor effects from new recordings. Existing telemetry/manual zoom editing remains available. Restoring verified tab/window identity is open; no manifest permissions were added.
+- Editor has **Look / Motion**, fewer visible controls, offline Geist Sans/Mono, accessible filled-button colours, 38 static upstream wallpapers and Upload Custom. Upstream `wispysky.mp4` remains unsupported. Third-party artwork rights remain unresolved; see `THIRD_PARTY_NOTICES.md`.
+- Single-tab recordings cannot crop page content with Browser top, including old saved `hideTop:true` projects. Window-source crop remains reversible and recording-scoped.
+- Missing media disables export/trim/zoom actions and shows recovery copy. Export disables duplicate export and file import; cancellation is not labelled failure. Shortcut hints, Z and global arrow seek restored.
+- Integration checks: 195 tests in 23 files, typecheck/build, browser recording-scoped persistence, and immediate export cancellation/import-export locking pass. Persistence covers two-section UI, old tab-crop guard, window crop/reload, imports and bad-ID recovery. The page-mode smoke no longer auto-accepts the recorder as its own source; headless target pixels remain explicitly unverified. No new native-window/cross-tab or physical-device acceptance claim.
+
+## Earlier editing and capture additions (2026-10-18)
 
 These changes are included in this source revision; this is not a deployment or release receipt.
 
-- New installations default to **Window — follows tabs in this window**. Window and single-tab modes start from a visible recorder page. Chrome's picker remains authoritative: selecting a single tab still locks capture to that tab.
+- This earlier iteration recommended Window; the QA correction above restores Single tab as default. Window and single-tab modes start from a visible recorder page. Chrome's picker remains authoritative: selecting a single tab still locks capture to that tab.
 - **Scene → Browser top → Hide browser top in export** is an independent, reversible per-recording edit. Adjust **Top height** in source-video pixels to remove the tab strip, address bar and toolbar. Preview and export share Recordly's existing crop-layout path; original media/zoom coordinates remain intact. A content-only recording cannot restore absent browser chrome. The current height is constant for the recording, not automatic detection of changing browser layouts/fullscreen.
 - Per-recording zoom edits, retained start/end, and browser-top presentation survive reload in localStorage. Raw imports have no stable project identity and do not overwrite saved recording edits. No IndexedDB schema change.
 - MP4/WebM trimming preserves source-time screen/webcam/cursor/zoom synchronization, rebases output timestamps, and clips boundary PCM samples. Static blurred backgrounds are cached; no proven overall export speedup.
@@ -190,10 +199,10 @@ All values are Recordly's (`projectPersistence.ts`, `types.ts`, `cursorMotionPre
 
 ### Warnings
 - **Export is slow on CPU.** About **3.5 min per 12 s of 1080p** per container on the CI box (MP4 214 s, WebM 218 s). The three stacked blurred drop-shadows are the expensive part without a GPU. Expect much faster on a desktop with hardware encode.
-- **Clicks outside the browser aren't captured.** Pointer data comes from a content script in web pages only (not `chrome://`, the Web Store or other apps). Window and screen modes map coordinates approximately. Auto-zoom matches Recordly closely only for tab recordings.
-- **The cursor is off outside tab mode.** Window and screen captures already contain the OS cursor, so Glide doesn't draw its own unless you turn on **Show Cursor** (the choice is remembered).
+- **New recording pointer telemetry is disabled until source identity is verified.** The content-script path remains, but the recorder rejects all unknown-source events. Therefore new captures have no automatic click zooms or post-rendered cursor effects. Manual zooms and imported/saved telemetry still work.
+- **Native cursor behaviour varies by browser.** Window/screen captures may bake in the OS cursor; showing a drawn cursor cannot remove a baked-in one or create missing telemetry.
 - **Artwork license risk. The repo is public.**
-  - The 5 wallpapers (`tahoe-*`, `sequoia-blue-orange`, `ventura`; `glassmorphism-4` of unknown origin) and the cursor sets (`tahoe`, `golden-gate`, `macos` = converted macOS cursors; `windows11` = Windows-style cursors) are Apple- and Microsoft-derived artwork. Recordly ships them with no license.
+  - All 38 static upstream wallpapers are now bundled. Some resemble Apple artwork; others have unknown provenance. Cursor sets (`tahoe`, `golden-gate`, `macos`, `windows11`) also carry Apple/Microsoft-derived-artwork risk. Recordly supplies no separate artwork licence; AGPL code licensing does not establish image rights.
   - Publishing them in a public repo is a copyright risk. Replace them with CC0 or self-made assets, or make the repo private.
   - Code licensing is fine: AGPL-3.0, with Recordly credited in the UI and repo, and Glide not branded as Recordly.
 - **Linux MP4 audio is Opus.** Chrome on Linux has no AAC encoder in WebCodecs. Most players handle Opus in MP4, but some editors (for example CapCut) don't. Fix without re-encoding the video:

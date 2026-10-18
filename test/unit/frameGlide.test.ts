@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { computeFrameLayout, FRAME_DEFAULTS, WALLPAPERS, backgroundToWallpaper } from "../../src/editor/frame";
 import { renderFrame, type Ctx2D, type RenderFrameInput } from "../../src/editor/render";
 import { getSceneEffectMetrics } from "../../src/vendor/recordly/sceneEffects";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 
 describe("FRAME_DEFAULTS / WALLPAPERS", () => {
 	it("match Recordly's project defaults (radius uses the macOS value)", () => {
@@ -16,8 +16,12 @@ describe("FRAME_DEFAULTS / WALLPAPERS", () => {
 		});
 	});
 
-	it("ships the five picked wallpapers as real files, default first", () => {
-		expect(WALLPAPERS.map((w) => w.id)).toEqual(["tahoe-light", "tahoe-dark", "sequoia-blue-orange", "ventura", "glassmorphism-4"]);
+	it("ships all 38 static Recordly wallpapers as real files, default first", () => {
+		expect(WALLPAPERS).toHaveLength(38);
+		expect(new Set(WALLPAPERS.map((w) => w.id)).size).toBe(38);
+		expect(WALLPAPERS[0].id).toBe("tahoe-light");
+		expect(WALLPAPERS.map((w) => w.url.replace("wallpapers/", "")).sort())
+			.toEqual(readdirSync("static/wallpapers").sort());
 		for (const w of WALLPAPERS) expect(existsSync(`static/${w.url}`)).toBe(true);
 		expect(backgroundToWallpaper(FRAME_DEFAULTS.background)).toBe(WALLPAPERS[0].url);
 	});

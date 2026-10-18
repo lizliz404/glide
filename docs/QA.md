@@ -2,7 +2,16 @@
 
 Run on 2026-10-18 (Asia/Shanghai, UTC+8). Tree: `origin/main` = `3f5638b`, pulled fast-forward. No product code was changed. Screenshots and the walkthrough harness (`walk.mjs`, `walk2.mjs`) live in [`docs/qa/`](qa/); logs stayed on the test box.
 
-**Status:** open issue list. Nothing below has been fixed yet.
+**Status:** original findings below are preserved as tested on `3f5638b`; see the R2 reconciliation here before treating them as current.
+
+### R2 reconciliation (2026-10-18)
+
+- Implemented: P1-2 (known tab sources cannot crop browser top), P1-5 default back to Single tab, P1-6 raw stream IDs removed, P1-7 disabled no-media actions/recovery copy, P1-8 cancellation copy and duplicate export/import lock, P1-9 shortcut hints/Z/global arrows, P1-10 self-hosted Geist, P1-11 two sections, P1-12 fewer visible controls, P1-13 all 38 static wallpapers, P2-1 dynamic surface note, P2-2 human surface/date labels, P2-4 filled-button contrast, P2-8 portable Chrome lookup in the persistence test.
+- P1-1 is removed from the visible picker rather than fixed: old saved gradient backgrounds still use the existing parser.
+- P1-3 is contained, **not fully restored**: recorder rejects all unknown-source pointer events. This prevents contamination but disables click auto-zooms and drawn-cursor effects on every new capture. Verified source identity still needs a separately approved implementation; no extra permissions were added. Manual zooms and saved/imported telemetry remain supported.
+- P2-9: removed page-mode self-capture auto-accept; test decodes real frames and asserts target colour in headful mode. Headless selection remains explicitly unverified, not target-tab acceptance.
+- Integration: 195 unit tests / 23 files, typecheck/build, and real-browser project persistence pass. This includes old tab-crop guard, window crop/reload, reduced UI, import boundaries and missing-ID recovery. Worker font checks loaded actual packaged fonts; all 38 image bytes match the pinned Recordly checkout.
+- Still open: native target-tab/window acceptance, restoration of source-verified pointer effects, countdown, undo, draggable trim, export ETA/resolution/performance, keyboard file-picker access, full empty-card visual redesign, video wallpaper and artwork rights. Parent browser acceptance verified immediate duplicate export/import lock, cancellation copy, and action recovery without a long encode. Page-mode recording/status/save/editor also passes with zero retained events; decoded headless frames did not prove the target tab and are explicitly unverified. The original screenshot harness below still references removed controls and must be adapted before reuse.
 
 ## Verdict
 **Minimally usable: yes.** Every core step works end to end:

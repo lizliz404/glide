@@ -1,13 +1,18 @@
 // Real extension-origin regression: user zoom edits survive immediate reload, including [];
 // recordings are isolated and raw/dev imports never inherit another recording's project.
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import puppeteer from "puppeteer-core";
 
 const root = resolve(".");
+// P2-8: no hard-coded distro path — CHROME first, then whatever Chrome/Chromium is installed.
+const CHROME_PATHS = ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser"];
+const chrome = process.env.CHROME ?? CHROME_PATHS.find((p) => existsSync(p));
+if (!chrome) throw new Error(`No Chrome/Chromium found; set CHROME=<path>. Tried: ${CHROME_PATHS.join(", ")}`);
 const browser = await puppeteer.launch({
-	executablePath: process.env.CHROME ?? "/usr/bin/chromium",
+	executablePath: chrome,
 	headless: true,
 	enableExtensions: true,
 	pipe: true,
@@ -32,8 +37,8 @@ try {
 		});
 		await new Promise((resolve, reject) => {
 			const tx = db.transaction("recordings", "readwrite");
-			for (const id of ["persist-a", "persist-b"]) tx.objectStore("recordings").put({
-				meta: { ...fixture.meta, id, createdAt: Date.now(), startedAt: 0, durationMs: 12000 },
+			for (const id of ["persist-a", "persist-b", "persist-w"]) tx.objectStore("recordings").put({
+				meta: { ...fixture.meta, id, createdAt: Date.now(), startedAt: 0, durationMs: 12000, ...(id === "persist-w" ? { surface: "window" } : {}) },
 				screen, camera: null, events: fixture.events,
 			});
 			tx.oncomplete = resolve;
@@ -52,10 +57,24 @@ try {
 	await page.goto(`${base}?id=persist-a`);
 	await ready();
 	assert.equal((await regions()).length, 3, "fresh recordings get suggestions");
+	// Look / Motion rail with presets; the raw Recordly ranges stay bound but hidden.
+	await page.click("#tab-settings");
+	assert.equal(await page.$eval("#panel-scene", (el) => el.hidden), true);
+	assert.equal(await page.$eval("#panel-settings", (el) => el.hidden), false);
+	await page.click("#tab-scene");
+	assert.equal(await page.$eval("#panel-settings", (el) => el.hidden), true);
+	assert.equal(await page.$eval("#frame-padding", (el) => !!el.closest("[hidden]")), true, "raw ranges are hidden, not dead");
+	await page.click('#frame-padding-presets [data-value="40"]');
+	assert.equal(await page.evaluate(() => glide.state.settings.frame.padding), 40, "padding preset writes the stored value");
+	await page.click("#frame-shadow-toggle");
+	assert.equal(await page.evaluate(() => glide.state.settings.frame.shadowIntensity), 0, "shadow toggle off writes 0");
+	await page.click("#frame-shadow-toggle");
+	assert.equal(await page.evaluate(() => glide.state.settings.frame.shadowIntensity > 0), true, "shadow toggle restores the default strength");
+	await page.click('#frame-padding-presets [data-value="20"]');
 	await page.click(".zoom-block");
-	await page.click('#zoom-depth [data-value="5"]');
+	await page.click('#zoom-depth [data-value="4"]');
 	const edited = await regions();
-	assert.equal(edited[0].depth, 5);
+	assert.equal(edited[0].depth, 4);
 	await page.reload();
 	await ready();
 	assert.deepEqual(await regions(), edited, "an immediate reload preserves depth and all region fields");
@@ -126,25 +145,71 @@ try {
 	await ready();
 	assert.equal(await page.evaluate(() => glide.state.trim.startMs), 0);
 	assert.equal(await page.evaluate(() => glide.state.trim.endMs === glide.state.durationMs), true);
-	// Post-recording browser chrome choice: reversible, independent of temporal trim, scoped to A.
-	await page.click("#browser-hide-top");
-	await page.$eval("#browser-top-px", (el) => { el.value = "120"; el.dispatchEvent(new Event("input", { bubbles: true })); });
-	const beforeCrop = await regions();
+	// Single-tab capture (surface "browser"): no browser chrome exists, so the control is disabled
+	// and an old project that persisted hideTop: true still cannot crop preview or export.
+	assert.equal(await page.$eval("#browser-hide-top", (el) => el.disabled), true, "tab capture disables hide-top");
+	assert.equal(await page.$eval("#browser-hide-top", (el) => el.checked), false);
+	await page.evaluate(() => {
+		const key = "glide.project.v1." + encodeURIComponent("persist-a");
+		const p = JSON.parse(localStorage.getItem(key));
+		p.browserView = { hideTop: true, topPx: 120 };
+		localStorage.setItem(key, JSON.stringify(p));
+	});
 	await page.reload();
 	await ready();
+	assert.equal(await page.evaluate(() => glide.state.browserView.hideTop), true, "the old saved crop is still restored");
+	assert.equal(await page.$eval("#browser-hide-top", (el) => el.disabled), true);
+	assert.equal(await page.$eval("#browser-hide-top", (el) => el.checked), false, "the control shows the effective state");
+	assert.deepEqual(await page.evaluate(() => glide.crop()), { x: 0, y: 0, width: 1, height: 1 }, "old saved crop cannot crop a tab recording");
+	assert.deepEqual(await regions(), two, "presentation crop never rewrites zoom coordinates");
+
+	// Window capture keeps real browser chrome: the crop stays available, persists and is reversible.
+	await page.goto(`${base}?id=persist-w`);
+	await ready();
+	assert.equal(await page.$eval("#browser-hide-top", (el) => el.disabled), false, "window capture can hide its top");
+	await page.click("#browser-hide-top");
+	await page.$eval("#browser-top-px", (el) => { el.value = "120"; el.dispatchEvent(new Event("input", { bubbles: true })); });
 	assert.deepEqual(await page.evaluate(() => glide.state.browserView), { hideTop: true, topPx: 120 });
-	assert.deepEqual(await regions(), beforeCrop, "presentation crop never rewrites zoom coordinates");
+	const windowCrop = await page.evaluate(() => glide.crop());
+	assert.ok(Math.abs(windowCrop.height - (1 - 120 / 720)) < 1e-9, `window crop projects into the source (${windowCrop.height})`);
+	await page.reload();
+	await ready();
+	assert.deepEqual(await page.evaluate(() => glide.state.browserView), { hideTop: true, topPx: 120 }, "window crop survives reload");
 	assert.equal(await page.$eval("#browser-hide-top", (el) => el.checked), true);
+	assert.ok(Math.abs((await page.evaluate(() => glide.crop().height)) - (1 - 120 / 720)) < 1e-9);
 	await page.screenshot({ path: "test/out/browser-top-hidden.png" });
 	await page.goto(`${base}?id=persist-b`);
 	await ready();
 	assert.equal(await page.evaluate(() => glide.state.browserView.hideTop), false, "B has no inherited crop");
-	await page.goto(`${base}?id=persist-a`);
+	await page.goto(`${base}?id=persist-w`);
 	await ready();
 	await page.click("#browser-hide-top");
-	assert.equal(await page.evaluate(() => glide.state.browserView.hideTop), false);
-	assert.equal(await page.evaluate(() => glide.state.browserView.topPx), 120, "toggling full source keeps calibrated height");
-	console.log("EDITOR PERSISTENCE OK: zooms, trim, browser top reload/reset/isolation, import boundary");
+	assert.deepEqual(await page.evaluate(() => glide.state.browserView), { hideTop: false, topPx: 120 }, "toggling full source keeps calibrated height");
+
+	// Real UI export path: lock duplicate exports/imports immediately, then cancel without a long encode.
+	const exportLock = await page.evaluate(() => {
+		document.querySelector("#export-mp4").click();
+		const locked = ["export-mp4", "export-webm", "open-files"].every((id) => document.getElementById(id).disabled);
+		document.querySelector("#cancel").click();
+		return locked;
+	});
+	assert.equal(exportLock, true, "export owns the export/import actions before async encoding starts");
+	await page.waitForFunction(() => document.querySelector("#status").textContent === "Export cancelled", { timeout: 30000 });
+	assert.equal(await page.$eval("#export-mp4", (el) => el.disabled), false, "cancellation releases the export lock");
+	assert.equal(await page.$eval("#open-files", (el) => el.disabled), false);
+
+	// Bad id: the recovery card is visible and announced, and nothing acts on missing media.
+	await page.goto(`${base}?id=does-not-exist`);
+	await page.waitForSelector("#empty:not([hidden])", { timeout: 10000 });
+	assert.equal(await page.$eval("#empty", (el) => el.getAttribute("role")), "alert");
+	const emptyText = await page.$eval("#empty p", (el) => el.textContent);
+	assert.ok(/does-not-exist/.test(emptyText) && /Open files/.test(emptyText), `recovery copy: ${emptyText}`);
+	assert.equal(await page.$eval("#export-mp4", (el) => el.disabled), true, "no export without media");
+	assert.equal(await page.$eval("#export-webm", (el) => el.disabled), true);
+	assert.equal(await page.$eval("#add-zoom", (el) => el.disabled), true, "no live +Zoom without media");
+	assert.equal(await page.$eval("#trim-start", (el) => el.disabled), true, "no live trim without media");
+	assert.equal(await page.$eval("#open-files", (el) => el.disabled), false, "Open files stays as the recovery path");
+	console.log("EDITOR PERSISTENCE OK: zooms, trim, browser-top crop (tab guarded, window kept), import boundary, export cancellation/lock");
 } finally {
 	await browser.close();
 }

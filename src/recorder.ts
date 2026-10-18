@@ -4,6 +4,7 @@
 // Display video + mixed audio go into one WebM; webcam goes into a second WebM so the
 // editor can place it freely. Pointer events from content scripts are collected here.
 import { saveRecording } from "./shared/db";
+import { acceptsPointerSender, UNKNOWN_SOURCE } from "./shared/pointerScope";
 import type { PointerEvt, RecordOptions, RecordingMeta, Surface } from "./shared/types";
 
 const isPage = new URLSearchParams(location.search).has("page");
@@ -33,7 +34,7 @@ function pickMime(kind: "video" | "camera") {
 	return list.find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
 }
 
-async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string; name?: string; surface?: Surface; requested?: Surface }> {
+async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string; surface?: Surface; requested?: Surface }> {
 	if (session) return { ok: false, error: "Already recording" };
 	const streams: MediaStream[] = [];
 	try {
@@ -115,7 +116,7 @@ async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string
 		screenRec.start(1000);
 		await started;
 		s.startedAt = Date.now();
-		return { ok: true, name: vTrack.label, surface: s.surface, requested: opts.surface };
+		return { ok: true, surface: s.surface, requested: opts.surface };
 	} catch (err) {
 		for (const st of streams) for (const t of st.getTracks()) t.stop();
 		session = null;
@@ -172,9 +173,12 @@ function stop(): Promise<string> {
 	return s.stopping;
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 	if (msg?.target !== "recorder") return;
 	if (msg.type === "pointer") {
+		// Only events provably from the recorded surface become zoom/cursor data. `sender` is
+		// Chrome's message metadata, so a page cannot claim another tab's identity.
+		if (!acceptsPointerSender(UNKNOWN_SOURCE, sender?.tab)) return;
 		session?.events.push(msg.evt as PointerEvt);
 		return;
 	}
@@ -196,7 +200,7 @@ if (isPage) {
 	const opts: RecordOptions = {
 		mic: p.get("mic") !== "0",
 		camera: p.get("camera") !== "0",
-		surface: (p.get("surface") as Surface) || "window",
+		surface: (p.get("surface") as Surface) || "browser",
 	};
 	const lead = document.getElementById("lead");
 	if (lead) {
@@ -230,10 +234,13 @@ if (isPage) {
 		await chrome.storage.local.set({ glideRecording: true });
 		await chrome.action.setBadgeText({ text: "REC" });
 		btn.textContent = "Stop and edit";
-		status.textContent = res.surface === "window"
-			? `Recording ${res.name ?? ""}. Tab switches inside the selected window are recorded. Keep this recorder open; hide the browser top later in the editor.`
-			: res.surface === "browser"
-				? `Recording ${res.name ?? ""}. This captures one tab only. To record tab switches, stop and choose a browser window.`
-				: `Recording ${res.name ?? ""}. Keep this recorder open. The selected screen is being recorded.`;
+		// Never print the raw capture id (`web-contents-media-stream://9:17`, `screen:-3:0`).
+		const what =
+			res.surface === "window"
+				? "Recording this window. Tab switches inside it are recorded; hide the browser top later in the editor."
+				: res.surface === "browser"
+					? "Recording this tab. To record tab switches, stop and choose a browser window."
+					: "Recording the selected screen. Keep this recorder open.";
+		status.textContent = `${what} Zoom and cursor effects are off: Glide cannot verify which tab or window is being recorded.`;
 	});
 }
