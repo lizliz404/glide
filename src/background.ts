@@ -75,6 +75,13 @@ async function askRecorder(type: "status" | "stop") {
 	return chrome.tabs.sendMessage(owner.id, { target: "recorder", type }).catch(() => null);
 }
 
+/** status/stop against the offscreen recorder document, or null when it does not exist. */
+async function offscreenStatus(type: "status" | "stop" = "status") {
+	const ctx = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] });
+	if (!ctx.length) return null;
+	return chrome.runtime.sendMessage({ target: "recorder", type }).catch(() => null);
+}
+
 async function focusRecorder(tabId: number) {
 	const tab = await chrome.tabs.get(tabId);
 	if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
@@ -84,6 +91,27 @@ async function focusRecorder(tabId: number) {
 async function setBadge(on: boolean) {
 	await chrome.action.setBadgeText({ text: on ? "REC" : "" });
 	if (on) await chrome.action.setBadgeBackgroundColor({ color: "#e5484d" });
+}
+
+// Focused-window pointer heuristic: the recorder accepts events only from tabs inside
+// the focused window for picker-based (window/screen) captures. Pushed on start and on
+// every focus change; tab capture ignores this (it binds an exact tabId instead).
+let focusedWindowId: number | null = null;
+
+function pushFocusedWindow() {
+	void chrome.runtime.sendMessage({ target: "recorder", type: "focusWindow", windowId: focusedWindowId }).catch(() => {});
+}
+
+chrome.windows.onFocusChanged.addListener((id) => {
+	focusedWindowId = id === chrome.windows.WINDOW_ID_NONE ? null : id;
+	pushFocusedWindow();
+});
+
+async function refreshFocusedWindow() {
+	// Normal windows only: devtools/popup windows must not become the pointer scope.
+	const w = await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null);
+	focusedWindowId = w?.id ?? null;
+	pushFocusedWindow();
 }
 
 // Closing a page-mode recorder tab mid-recording kills the session silently: no "saved" and
@@ -110,12 +138,61 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 		switch (msg.type) {
 			case "start": {
 				const opts = msg.opts as RecordOptions;
+				// A stale idle recorder page can sit next to a live offscreen session;
+				// never start a second capture while any recorder reports recording.
+				if ((await askRecorder("status"))?.recording || (await offscreenStatus())?.recording) {
+					reply({ ok: false, error: "Already recording" });
+					break;
+				}
 				const pointer = await startPointerLogging();
 				await ensureOffscreen();
-				const res = await chrome.runtime.sendMessage({ target: "recorder", type: "start", opts });
+				const res = await chrome.runtime.sendMessage({
+					target: "recorder",
+					type: "start",
+					opts: { ...opts, pointerEnabled: pointer },
+				});
 				if (res?.ok) {
 					await chrome.storage.local.set({ glideRecording: true });
 					await setBadge(true);
+					await refreshFocusedWindow();
+				} else {
+					await stopPointerLogging();
+					await chrome.offscreen.closeDocument().catch(() => {});
+				}
+				reply({ ...res, pointer });
+				break;
+			}
+			case "start-tab": {
+				// Single-tab capture via chrome.tabCapture: no picker, exact tab identity,
+				// and the video contains no browser chrome. The stream id is minted here
+				// and consumed by the offscreen recorder via getUserMedia(chromeMediaSource).
+				const opts = msg.opts as RecordOptions;
+				const tabId = msg.tabId as number;
+				if ((await askRecorder("status"))?.recording || (await offscreenStatus())?.recording) {
+					reply({ ok: false, error: "Already recording" });
+					break;
+				}
+				const pointer = await startPointerLogging();
+				let streamId: string;
+				try {
+					streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
+				} catch (err) {
+					await stopPointerLogging();
+					reply({ ok: false, error: `tabCapture: ${err instanceof Error ? err.message : err}` });
+					break;
+				}
+				await ensureOffscreen();
+				const res = await chrome.runtime
+					.sendMessage({
+						target: "recorder",
+						type: "start",
+						opts: { ...opts, tabStreamId: streamId, sourceTabId: tabId, pointerEnabled: pointer },
+					})
+					.catch((err: unknown) => ({ ok: false, error: err instanceof Error ? err.message : "Recorder unavailable" }));
+				if (res?.ok) {
+					await chrome.storage.local.set({ glideRecording: true });
+					await setBadge(true);
+					await refreshFocusedWindow();
 				} else {
 					await stopPointerLogging();
 					await chrome.offscreen.closeDocument().catch(() => {});
@@ -125,9 +202,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 			}
 			case "prepare-page": {
 				// Only one recorder listener may own start/stop/status replies.
+				if ((await offscreenStatus())?.recording) {
+					reply({ ok: false, error: "Already recording" });
+					break;
+				}
 				await chrome.offscreen.closeDocument().catch(() => {});
 				const pointer = await startPointerLogging();
-				const q = new URLSearchParams({ page: "1", mic: msg.opts.mic ? "1" : "0", camera: msg.opts.camera ? "1" : "0", surface: msg.opts.surface });
+				const q = new URLSearchParams({
+					page: "1",
+					mic: msg.opts.mic ? "1" : "0",
+					camera: msg.opts.camera ? "1" : "0",
+					surface: msg.opts.surface,
+					ptr: pointer ? "1" : "0",
+				});
+				await refreshFocusedWindow();
 				const existing = await recorderTabs();
 				recorderOwnerId = existing.find((t) => t.id === recorderOwnerId)?.id ?? existing[0]?.id ?? null;
 				const live = existing.length ? await askRecorder("status") : null;
@@ -154,21 +242,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 				break;
 			}
 			case "stop": {
+				// The owner may be a page or the offscreen doc; a page reply with no id
+				// means it was idle, so keep looking before declaring the session dead.
 				const page = await askRecorder("stop");
-				if (page) return reply(page);
-				const offscreen = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] });
-				reply(
-					offscreen.length
-						? await chrome.runtime.sendMessage({ target: "recorder", type: "stop" }).catch(() => ({ ok: false, error: "Recorder closed" }))
-						: { ok: false, error: "Recorder closed" },
-				);
+				if (page?.id) return reply(page);
+				const off = await offscreenStatus("stop");
+				reply(off ?? page ?? { ok: false, error: "Recorder closed" });
 				break;
 			}
 			case "status": {
 				const page = await askRecorder("status");
-				if (page) return reply(page);
-				const ctx = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] });
-				reply(ctx.length ? await chrome.runtime.sendMessage({ target: "recorder", type: "status" }).catch(() => ({ recording: false })) : { recording: false });
+				if (page?.recording) return reply(page);
+				const off = await offscreenStatus();
+				reply(off?.recording ? off : (page ?? off ?? { recording: false }));
 				break;
 			}
 			case "saved": {

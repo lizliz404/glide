@@ -51,4 +51,14 @@ export interface RecordOptions {
 	mic: boolean;
 	camera: boolean;
 	surface: Surface;
+	/**
+	 * Set by the service worker for single-tab capture: a chrome.tabCapture stream id
+	 * plus the tab it belongs to. When present, the recorder consumes it via
+	 * getUserMedia(chromeMediaSource:"tab") instead of getDisplayMedia — no picker —
+	 * and pointer events are accepted only from sourceTabId.
+	 */
+	tabStreamId?: string;
+	sourceTabId?: number;
+	/** True when the pointer-logging content script was registered for this session. */
+	pointerEnabled?: boolean;
 }

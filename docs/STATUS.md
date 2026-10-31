@@ -4,6 +4,14 @@ Last updated 2026-10-18 (Asia/Shanghai), at `main` after the Recordly port (v0.2
 
 Glide is a Chrome MV3 extension that records a tab, window or screen with mic and webcam. Its editor is a browser port of [Recordly](https://github.com/webadderallorg/Recordly) (AGPL-3.0), copied from commit **`e4a9d04860f4cbad3358bda3ac4a2307489f1d03`** (2026-10-17). This page records what's done, what was copied from where, what we decided and why, and what's still missing.
 
+## Recording rework (2026-10-31)
+
+- **Single tab capture moved to `chrome.tabCapture`:** `getMediaStreamId({targetTabId})` is minted in the service worker and consumed by the offscreen recorder via `getUserMedia(chromeMediaSource: "tab")`. No Chrome picker, no recorder page, and no browser chrome in the video. On any tabCapture/getUserMedia failure the popup falls back to the picker-based recorder page (unchanged path).
+- **Pointer identity restored (the P1-3 trade-off is lifted):** tab capture binds an exact `tabId` and accepts pointer events only from it (cross-tab contamination still impossible). Picker-based window/screen captures accept events from the *focused* window only — a best-effort heuristic, since `getDisplayMedia` never reveals the chosen surface and pointer positions outside any browser window are invisible to extensions either way. The rule lives in `shared/pointerScope.ts` (`unknown` / `tab` / `focused-window`); focus is tracked inside the recorder and pushed by the service worker as backup.
+- **Side panel monitor:** `sidepanel.html` (permission `sidePanel`) opens from the popup's Record click and shows REC state + elapsed, a mirrored webcam preview, an RMS mic meter, a persistent teleprompter (`glideScript`, Present mode with autoscroll), a cursor-tracking pill (`status.pointer`), and Stop-and-edit. It is a monitor only — capture stays in the offscreen/page recorder so closing the panel never kills a session. In window/screen captures the panel is inside the recorded area; the panel says so and recommends single-tab capture or a second monitor.
+- **Recorder routing hardened:** start/start-tab refuse while any recorder reports a live session; stop/status fall through from an idle recorder page to the offscreen document; `prepare-page` no longer kills a live offscreen session. (A stale idle recorder page could previously shadow a live offscreen recording.)
+- Manifest additions: `tabCapture`, `sidePanel`, `side_panel.default_path`.
+
 ## QA corrections (2026-10-18)
 
 - Default returns to **Single tab**; window capture remains an explicit option. Surface hints update with the selected mode; status no longer exposes raw capture IDs.

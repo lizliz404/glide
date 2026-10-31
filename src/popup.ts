@@ -14,9 +14,9 @@ const bg = <T = any>(msg: object) => chrome.runtime.sendMessage<object, T>({ tar
 const SURFACE_LABEL: Record<Surface, string> = { browser: "Tab", window: "Window", monitor: "Screen" };
 // One line per choice, so the note never describes a surface the user did not pick (P2-1).
 const SURFACE_NOTE: Record<Surface, string> = {
-	browser: "Stays locked to the tab you pick, with no browser chrome. Cleanest base for a demo.",
-	window: "Follows tab switches in one window, but the browser chrome and the real cursor are baked into the video. Crop the top later in the editor.",
-	monitor: "Records a whole screen, other apps included. The real cursor is baked into the video.",
+	browser: "Records the tab you're on right now — no picker, no browser chrome, and cursor-follow zooms work fully.",
+	window: "Follows tab switches in one window; the browser chrome and real cursor are baked into the video. Crop the top in the editor. Cursor effects follow the focused window (best effort).",
+	monitor: "Records a whole screen, other apps included. The real cursor is baked into the video; cursor effects only track the pointer while it's over a browser window.",
 };
 const surfaceNote = $<HTMLParagraphElement>("surface-note");
 const syncSurfaceNote = () => {
@@ -87,9 +87,34 @@ startBtn.addEventListener("click", async () => {
 	}
 	// Host access is optional and only used to log pointer positions while recording.
 	await chrome.permissions.request({ origins: ["<all_urls>"] }).catch(() => false);
-	// Tab and window capture need a visible page: tab capture stalls offscreen, and a
-	// window recording has to follow the tabs the user switches to. Screen stays offscreen.
-	if (opts.surface === "browser" || opts.surface === "window") {
+	// Open the confidence panel (webcam preview, mic level, teleprompter, stop) in the
+	// current window — this needs the Record click's user gesture.
+	const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+	if (activeTab?.windowId != null) await chrome.sidePanel.open({ windowId: activeTab.windowId }).catch(() => {});
+	// Single tab: capture via chrome.tabCapture on the tab the user is looking at —
+	// no picker, exact pointer identity, no browser chrome in frame. Give the side
+	// panel a beat to open first so its layout reflow doesn't land in the recording.
+	if (opts.surface === "browser" && activeTab?.id != null) {
+		await new Promise((r) => setTimeout(r, 350));
+		const res = await bg<{ ok: boolean; error?: string; pointer?: boolean }>({ type: "start-tab", opts, tabId: activeTab.id });
+		if (res?.ok) {
+			setRecording(true, Date.now());
+			status.textContent = "Recording this tab — your camera, mic level and teleprompter are in the side panel.";
+			return;
+		}
+		// Any tabCapture/getUserMedia failure falls back to the picker-based recorder
+		// page, which is strictly more general.
+		if (res?.error && !/Already recording/i.test(res.error)) {
+			await bg({ type: "prepare-page", opts });
+			window.close();
+			return;
+		}
+		status.textContent = res?.error ?? "Could not start recording";
+		return;
+	}
+	// Window capture needs a visible page: the recording has to follow the tabs the
+	// user switches to. Screen stays offscreen.
+	if (opts.surface === "window") {
 		await bg({ type: "prepare-page", opts });
 		window.close();
 		return;
@@ -100,9 +125,9 @@ startBtn.addEventListener("click", async () => {
 	startBtn.disabled = false;
 	if (res?.ok) {
 		setRecording(true, Date.now());
-		// Zoom and cursor need pointer data, which Glide only keeps when it can prove which
-		// surface was captured (see src/shared/pointerScope.ts).
-		status.textContent += " Zoom and cursor effects are off: Glide cannot verify which tab or window is being recorded.";
+		// Picker-based screen capture uses the focused-window pointer heuristic —
+		// follow effects work while the cursor is over a browser window.
+		status.textContent += " Cursor effects follow the pointer inside the focused browser window (best effort).";
 		return;
 	}
 	// Some Chrome builds refuse getDisplayMedia from an offscreen document without a direct

@@ -1,10 +1,10 @@
 // Recorder: runs in the offscreen document (default) or in recorder.html opened as a normal
 // tab (fallback when the browser refuses getDisplayMedia without a direct user gesture).
-// Captures: display (tab/window/screen, user picks in Chrome's picker), mic, webcam.
+// Captures: display (tab/window/screen), mic, webcam.
 // Display video + mixed audio go into one WebM; webcam goes into a second WebM so the
 // editor can place it freely. Pointer events from content scripts are collected here.
 import { saveRecording } from "./shared/db";
-import { acceptsPointerSender, UNKNOWN_SOURCE } from "./shared/pointerScope";
+import { acceptsPointerSender, type PointerSource } from "./shared/pointerScope";
 import type { PointerEvt, RecordOptions, RecordingMeta, Surface } from "./shared/types";
 
 const isPage = new URLSearchParams(location.search).has("page");
@@ -25,6 +25,36 @@ interface Session {
 	stopping: Promise<string> | null;
 }
 let session: Session | null = null;
+/** Provenance rule for incoming pointer events; set by start(). */
+let pointerSource: PointerSource = { kind: "unknown" };
+/** Window the OS currently reports as focused. Tracked locally (the service worker
+ *  also pushes updates, which covers contexts where window events do not fire). */
+let focusedWindowId: number | null = null;
+
+// Offscreen documents do not expose every chrome.* surface; degrade quietly and let
+// the service worker's focusWindow pushes carry the heuristic there.
+try {
+	void chrome.windows
+		.getLastFocused({ windowTypes: ["normal"] })
+		.then((w) => (focusedWindowId = w?.id ?? null))
+		.catch(() => {});
+	chrome.windows.onFocusChanged.addListener((id) => {
+		focusedWindowId = id === chrome.windows.WINDOW_ID_NONE ? null : id;
+	});
+} catch {
+	/* no windows API in this context — rely on pushed focusWindow messages */
+}
+
+/** Re-read the focused window at capture start: onFocusChanged can be unreliable on
+ *  some platforms (Wayland), and pushed messages may predate a page-mode recorder. */
+async function refreshFocusedWindow() {
+	try {
+		const w = await chrome.windows.getLastFocused({ windowTypes: ["normal"] });
+		if (w?.id != null) focusedWindowId = w.id;
+	} catch {
+		/* keep the last known value */
+	}
+}
 
 function pickMime(kind: "video" | "camera") {
 	const list =
@@ -38,8 +68,24 @@ async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string
 	if (session) return { ok: false, error: "Already recording" };
 	const streams: MediaStream[] = [];
 	try {
+		// Single-tab capture consumes a chrome.tabCapture stream id directly: no picker,
+		// and the tabId is known exactly so pointer telemetry can be trusted. Window and
+		// screen still go through Chrome's picker (getDisplayMedia).
 		// https://developer.chrome.com/docs/web-platform/screen-sharing-controls
-		const display = await navigator.mediaDevices.getDisplayMedia({
+		const display = opts.tabStreamId
+			? await navigator.mediaDevices.getUserMedia({
+					audio: { mandatory: { chromeMediaSource: "tab", chromeMediaSourceId: opts.tabStreamId } },
+					video: {
+						mandatory: {
+							chromeMediaSource: "tab",
+							chromeMediaSourceId: opts.tabStreamId,
+							maxWidth: 3840,
+							maxHeight: 2160,
+							maxFrameRate: 60,
+						},
+					},
+				} as MediaStreamConstraints)
+			: await navigator.mediaDevices.getDisplayMedia({
 			video: {
 				displaySurface: opts.surface,
 				frameRate: { ideal: 60, max: 60 },
@@ -80,7 +126,7 @@ async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string
 			const dest = audioCtx.createMediaStreamDestination();
 			for (const s of sources) audioCtx.createMediaStreamSource(s).connect(dest);
 			// Tab capture mutes the tab locally; play tab audio back so the user still hears it.
-			if (display.getAudioTracks().length && settings.displaySurface === "browser") {
+			if (display.getAudioTracks().length && (settings.displaySurface === "browser" || opts.tabStreamId)) {
 				audioCtx.createMediaStreamSource(display).connect(audioCtx.destination);
 			}
 			audioTracks.push(...dest.stream.getAudioTracks());
@@ -105,6 +151,11 @@ async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string
 			opts,
 			stopping: null,
 		};
+		// Provenance for pointer telemetry: exact tab for tabCapture, focused-window
+		// heuristic for picker-based window/screen captures. Refresh focus now — the
+		// window that was active when capture began is the best heuristic we have.
+		pointerSource = opts.sourceTabId != null ? { kind: "tab", tabId: opts.sourceTabId } : { kind: "focused-window" };
+		await refreshFocusedWindow();
 		screenRec.ondataavailable = (e) => e.data.size && s.screenChunks.push(e.data);
 		if (camRec) camRec.ondataavailable = (e) => e.data.size && s.camChunks.push(e.data);
 		// User clicked Chrome's "Stop sharing".
@@ -120,6 +171,7 @@ async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string
 	} catch (err) {
 		for (const st of streams) for (const t of st.getTracks()) t.stop();
 		session = null;
+		pointerSource = { kind: "unknown" };
 		const e = err as DOMException;
 		const error = `${e.name}: ${e.message}`;
 		void chrome.runtime.sendMessage({ target: "background", type: "failed", error, page: isPage }).catch(() => {});
@@ -161,6 +213,7 @@ function stop(): Promise<string> {
 			events: s.events.filter((e) => e.t >= s.startedAt).map((e) => ({ ...e, t: e.t - s.startedAt })),
 		});
 		session = null;
+		pointerSource = { kind: "unknown" };
 		// Defer: let the "stop" reply reach the service worker first, because handling
 		// "saved" closes this offscreen document.
 		setTimeout(() => {
@@ -180,10 +233,16 @@ function stop(): Promise<string> {
 
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 	if (msg?.target !== "recorder") return;
+	if (msg.type === "focusWindow") {
+		// Focused-window heuristic input, pushed by the service worker on start and on
+		// every windows.onFocusChanged. WINDOW_ID_NONE (-1) and friends clear it.
+		focusedWindowId = typeof msg.windowId === "number" && msg.windowId >= 0 ? msg.windowId : null;
+		return;
+	}
 	if (msg.type === "pointer") {
-		// Only events provably from the recorded surface become zoom/cursor data. `sender` is
-		// Chrome's message metadata, so a page cannot claim another tab's identity.
-		if (!acceptsPointerSender(UNKNOWN_SOURCE, sender?.tab)) return;
+		// Only events provably inside the recorded surface become zoom/cursor data.
+		// `sender` is Chrome's message metadata, so a page cannot claim another identity.
+		if (!acceptsPointerSender(pointerSource, sender?.tab, focusedWindowId)) return;
 		session?.events.push(msg.evt as PointerEvt);
 		return;
 	}
@@ -192,7 +251,20 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 		if (msg.type === "start") reply(await start(msg.opts));
 		else if (msg.type === "stop") reply({ ok: true, id: await stop() });
 		else if (msg.type === "status")
-			reply({ recording: !!session, since: session?.startedAt ?? 0, events: session?.events.length ?? 0 });
+			reply({
+				recording: !!session,
+				since: session?.startedAt ?? 0,
+				events: session?.events.length ?? 0,
+				// "tab" = precise follow data, "window" = focused-window best effort, "off" = none.
+				pointer: !session?.opts.pointerEnabled
+					? "off"
+					: pointerSource.kind === "tab"
+						? "tab"
+						: pointerSource.kind === "focused-window"
+							? "window"
+							: "off",
+				surface: session?.surface ?? null,
+			});
 	})();
 	return true;
 });
@@ -206,6 +278,7 @@ if (isPage) {
 		mic: p.get("mic") !== "0",
 		camera: p.get("camera") !== "0",
 		surface: (p.get("surface") as Surface) || "browser",
+		pointerEnabled: p.get("ptr") !== "0",
 	};
 	const lead = document.getElementById("lead");
 	if (lead) {
@@ -254,7 +327,7 @@ if (isPage) {
 				: res.surface === "browser"
 					? "Recording this tab. To record tab switches, stop and choose a browser window."
 					: "Recording the selected screen. Keep this recorder open.";
-		status.textContent = `${what} Zoom and cursor effects are off: Glide cannot verify which tab or window is being recorded.`;
+		status.textContent = `${what} Cursor effects follow the focused window — they track the pointer inside whichever window is active (best effort, not exact).`;
 	});
 	// Guard while the session object exists: stopping is async, so "Saving…" is still unsaved.
 	window.addEventListener("beforeunload", (e) => {

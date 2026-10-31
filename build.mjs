@@ -13,6 +13,7 @@ const opts = {
 		recorder: "src/recorder.ts",
 		popup: "src/popup.ts",
 		setup: "src/setup.ts",
+		sidepanel: "src/sidepanel.ts",
 		editor: "src/editor/main.ts",
 	},
 	bundle: true,

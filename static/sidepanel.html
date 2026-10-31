@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Glide · monitor</title>
+<link rel="stylesheet" href="ui.css" />
+</head>
+<body class="sidepanel">
+  <header class="sp-status">
+    <span id="rec-dot" class="rec-dot" hidden aria-hidden="true"></span>
+    <span id="elapsed" class="mono">—</span>
+    <span id="surface" class="hint"></span>
+    <span id="cursor-pill" class="sp-pill" hidden></span>
+  </header>
+  <p id="status" class="hint" role="status" aria-live="polite">Not recording — press Record in the Glide popup.</p>
+
+  <section class="sp-card" aria-label="Webcam">
+    <video id="cam" autoplay muted playsinline hidden></video>
+    <p id="cam-fallback" class="sp-fallback">Camera off</p>
+  </section>
+
+  <section class="sp-card sp-meter" aria-label="Microphone">
+    <div class="sp-meter-row">
+      <span id="mic-label" class="hint">Mic off</span>
+      <div class="sp-meter-track" aria-hidden="true"><div id="mic-level" class="sp-meter-fill"></div></div>
+    </div>
+  </section>
+
+  <section class="sp-card" aria-label="Teleprompter">
+    <div class="sp-prompt-bar">
+      <span class="hint">Script</span>
+      <span class="spacer"></span>
+      <button id="present" type="button" class="btn small">Present</button>
+    </div>
+    <textarea id="script" rows="6" aria-label="Teleprompter script" placeholder="Paste the lines you want to read."></textarea>
+    <div id="prompter" class="sp-prompter" hidden tabindex="0" aria-label="Presenting script"></div>
+    <div id="present-controls" class="sp-prompt-bar" hidden>
+      <label class="inline" for="speed">Speed <input id="speed" type="range" min="8" max="80" value="28" aria-valuemin="8" aria-valuemax="80" /></label>
+      <button id="pause-scroll" type="button" class="btn small ghost" aria-pressed="false">Pause</button>
+    </div>
+  </section>
+
+  <p id="capture-hint" class="hint" hidden>This panel is inside a window or screen capture. Move it to another window or monitor, or record a single tab, to keep it out of frame.</p>
+  <button id="stop" type="button" class="btn danger wide" hidden>Stop and edit</button>
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>
