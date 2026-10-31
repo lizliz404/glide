@@ -61,18 +61,39 @@ const state = {
 const comp = new Compositor(state.settings);
 /** True while an export owns the page; export and file-import actions are locked out. */
 let exporting = false;
+/** The export lock must cover keyboard focus too, not just pointer events: inert both
+ *  editing surfaces so tabs, arrows and activation keys can't mutate mid-encode. */
+function setExportLock(on: boolean) {
+	exporting = on;
+	document.body.classList.toggle("exporting", on);
+	// Lock everything that can edit or open media; the topbar stays live for Cancel.
+	// (#empty sits inside .stage-wrap and exports can only run with media loaded, so the
+	// recovery card is never visible while locked — its button is disabled anyway.)
+	for (const sel of [".rail", ".panel", ".stage-wrap", ".transport", ".timeline-panel"]) {
+		const el = document.querySelector<HTMLElement>(sel);
+		if (on) el?.setAttribute("inert", "");
+		else el?.removeAttribute("inert");
+	}
+	// Status text changes every encode tick; pause announcements until it settles.
+	$("status").setAttribute("aria-busy", String(on));
+	if (on && document.activeElement instanceof HTMLElement
+		&& document.activeElement.closest(".workspace, .timeline-panel")) document.activeElement.blur();
+	syncActions();
+}
 const SURFACE_LABEL: Record<Surface, string> = { browser: "Tab", window: "Window", monitor: "Screen" };
 let stickyStatus = "Loading…";
 let tempTimer = 0;
+/** A save failure must outlive the next transient status, or the warning vanishes after 4s. */
+let saveWarning = "";
 const status = (msg: string) => {
 	stickyStatus = msg;
-	$("status").textContent = msg;
+	$("status").textContent = saveWarning ? `${saveWarning} ${msg}` : msg;
 };
 /** Transient feedback in the status line; reverts to the last sticky message after a few seconds. */
 const statusTemp = (msg: string, ms = 4000) => {
 	$("status").textContent = msg;
 	clearTimeout(tempTimer);
-	tempTimer = window.setTimeout(() => ($("status").textContent = stickyStatus), ms);
+	tempTimer = window.setTimeout(() => ($("status").textContent = saveWarning ? `${saveWarning} ${stickyStatus}` : stickyStatus), ms);
 };
 const fmt = (ms: number) => {
 	const s = Math.max(0, ms / 1000);
@@ -94,6 +115,13 @@ function ensureBackgroundImage() {
 	img.onload = () => {
 		if (state.bgUrl !== bg.url) return;
 		state.bgImage = img;
+		redraw();
+	};
+	img.onerror = () => {
+		if (state.bgUrl !== bg.url) return;
+		state.bgUrl = "";
+		state.bgImage = null;
+		statusTemp("That image could not be loaded — pick another background");
 		redraw();
 	};
 	img.src = bg.url;
@@ -176,18 +204,23 @@ function check(id: string, get: () => boolean, set: (v: boolean) => void) {
 	bindings.push({ sync: () => (el.checked = get()) });
 }
 function radios(container: HTMLElement, get: () => string, set: (v: string) => void) {
-	const buttons = () => [...container.querySelectorAll<HTMLButtonElement>("[role=radio]")];
+	// Hidden options (e.g. click effects that are bound but not offered) must stay out of the
+	// roving order, or arrow keys select a value with no visible checked state.
+	const buttons = () => [...container.querySelectorAll<HTMLButtonElement>("[role=radio]")].filter((b) => !b.hidden);
 	container.addEventListener("click", (e) => {
 		const b = (e.target as HTMLElement).closest<HTMLButtonElement>("[role=radio]");
-		if (!b || !container.contains(b)) return;
+		if (!b || b.hidden || !container.contains(b)) return;
 		set(b.dataset.value!);
 		settingsChanged();
 	});
 	container.addEventListener("keydown", (e) => {
 		if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
 		const list = buttons();
+		if (!list.length) return;
 		const i = list.findIndex((b) => b.getAttribute("aria-checked") === "true");
-		const next = list[(i + (e.key === "ArrowLeft" || e.key === "ArrowUp" ? list.length - 1 : 1)) % list.length];
+		const back = e.key === "ArrowLeft" || e.key === "ArrowUp";
+		// Nothing checked (custom upload, hidden value): start from an edge, not an arbitrary middle.
+		const next = i === -1 ? (back ? list[list.length - 1] : list[0]) : list[(i + (back ? list.length - 1 : 1)) % list.length];
 		e.preventDefault();
 		next.click();
 		next.focus();
@@ -230,7 +263,7 @@ function bindControls() {
 		b.type = "button";
 		b.setAttribute("role", "radio");
 		b.dataset.value = value;
-		b.title = label;
+		b.dataset.label = label;
 		b.setAttribute("aria-label", label);
 		b.style.background = css;
 		if (css.startsWith("url(")) b.style.backgroundSize = "cover";
@@ -245,8 +278,11 @@ function bindControls() {
 	}, (v) => (S().frame.background = { kind: "image", url: v }));
 	$("bg-upload-btn").addEventListener("click", () => $<HTMLInputElement>("bg-upload").click());
 	$<HTMLInputElement>("bg-upload").addEventListener("change", (e) => {
-		const f = (e.target as HTMLInputElement).files?.[0];
+		const input = e.target as HTMLInputElement;
+		const f = input.files?.[0];
+		input.value = ""; // picking the same file twice must fire change again
 		if (!f) return;
+		if (!f.type.startsWith("image/")) return statusTemp("That file is not an image — pick a PNG, JPEG or WebP");
 		S().frame.background = { kind: "image", url: URL.createObjectURL(f) };
 		settingsChanged();
 	});
@@ -397,12 +433,17 @@ function bindControls() {
 	bindTimeline();
 }
 
+/** The zoom panel has no rail tab, so when it is open the rail still needs one tabbable
+ *  tab — keep the last real section's tab reachable or keyboard users are stuck. */
+let lastTabSection = "scene";
+
 function showSection(id: string) {
 	state.section = id;
+	if (id !== "zoom") lastTabSection = id;
 	for (const t of document.querySelectorAll<HTMLButtonElement>(".rail [role=tab]")) {
 		const on = t.dataset.section === id;
 		t.setAttribute("aria-selected", String(on));
-		t.tabIndex = on ? 0 : -1;
+		t.tabIndex = on || (id === "zoom" && t.dataset.section === lastTabSection) ? 0 : -1;
 	}
 	for (const p of document.querySelectorAll<HTMLElement>(".panel > section")) p.hidden = p.id !== `panel-${id}`;
 	if (id !== "zoom") selectRegion(null, false);
@@ -412,8 +453,12 @@ function showSection(id: string) {
 // Zoom regions + timeline
 
 function saveProject() {
-	if (state.projectId && !saveProjectZooms(state.projectId, state.durationMs, state.regions, undefined, state.trim, state.browserView)) {
-		status("Edits could not be saved. Keep this tab open to avoid losing them.");
+	if (!state.projectId) return;
+	const ok = saveProjectZooms(state.projectId, state.durationMs, state.regions, undefined, state.trim, state.browserView);
+	saveWarning = ok ? "" : "Edits could not be saved. Keep this tab open to avoid losing them.";
+	if (!ok) {
+		clearTimeout(tempTimer);
+		status(stickyStatus);
 	}
 }
 
@@ -436,7 +481,11 @@ function syncZoomPanel() {
 	const r = state.regions.find((x) => x.id === state.selectedId) ?? null;
 	$("zoom-none").hidden = !!r;
 	$("zoom-edit").hidden = !r;
-	canvas.classList.toggle("pick", r?.mode === "manual");
+	const picking = r?.mode === "manual";
+	canvas.classList.toggle("pick", picking);
+	// Manual focus also works from the keyboard: the canvas is only a tab stop while picking.
+	canvas.tabIndex = picking ? 0 : -1;
+	canvas.setAttribute("aria-label", picking ? "Preview — arrow keys move the focus point" : "Composited video preview");
 	syncControls();
 }
 
@@ -496,6 +545,8 @@ function drawTimeline() {
 		clicks.append(i);
 	}
 	const track = $("zoom-track");
+	// Blocks are rebuilt on every redraw; keep keyboard focus on the same zoom across the rebuild.
+	const focusId = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(".zoom-block")?.dataset.id;
 	track.replaceChildren();
 	for (const r of state.regions) {
 		const b = document.createElement("div");
@@ -518,6 +569,7 @@ function drawTimeline() {
 		dim.setAttribute("aria-hidden", "true");
 		track.append(dim);
 	}
+	if (focusId) track.querySelector<HTMLElement>(`.zoom-block[data-id="${CSS.escape(focusId)}"]`)?.focus();
 	const tl = $("timeline");
 	tl.setAttribute("aria-valuemax", String(Math.round(d)));
 	$("seg-count").textContent = `${state.regions.length} zoom${state.regions.length === 1 ? "" : "s"} · ${state.telemetry.filter((p) => p.interactionType && p.interactionType !== "move" && p.interactionType !== "mouseup").length} clicks`;
@@ -530,10 +582,19 @@ function syncTrimControls() {
 	for (const el of document.querySelectorAll<HTMLElement>(".trim-excluded.before")) el.style.width = pctOf(startMs);
 	for (const el of document.querySelectorAll<HTMLElement>(".trim-excluded.after")) el.style.width = pctOf(Math.max(0, state.durationMs - endMs));
 	// Drag handles sit on the trim lines; they only make sense once media is loaded.
-	for (const [id, ms] of [["trim-handle-start", startMs], ["trim-handle-end", endMs]] as const) {
+	// Nudge them apart when the retained range touches an edge, or the 11px hit targets stack
+	// and the later handle silently wins every click.
+	const startPct = (startMs / (state.durationMs || 1)) * 100;
+	const endPct = (endMs / (state.durationMs || 1)) * 100;
+	const nudge = Math.abs(endPct - startPct) < 1.6 ? 0.9 : 0;
+	for (const [id, ms, left] of [
+		["trim-handle-start", startMs, startPct - nudge],
+		["trim-handle-end", endMs, endPct + nudge],
+	] as const) {
 		const h = $(id);
 		h.hidden = !state.screenBlob;
-		h.style.left = pctOf(ms);
+		h.style.left = `${left}%`;
+		h.setAttribute("aria-valuemin", "0");
 		h.setAttribute("aria-valuemax", String(Math.round(state.durationMs)));
 		h.setAttribute("aria-valuenow", String(Math.round(ms)));
 		h.setAttribute("aria-valuetext", fmt(ms));
@@ -546,11 +607,30 @@ function syncTrimControls() {
 function syncActions() {
 	const hasMedia = !!state.screenBlob;
 	for (const id of ["export-mp4", "export-webm"]) $<HTMLButtonElement>(id).disabled = !hasMedia || exporting;
-	for (const id of ["add-zoom", "suggest-zooms"]) $<HTMLButtonElement>(id).disabled = !hasMedia;
+	for (const id of ["add-zoom", "suggest-zooms", "play"]) $<HTMLButtonElement>(id).disabled = !hasMedia;
 	$<HTMLInputElement>("open-files").disabled = exporting;
-	$<HTMLButtonElement>("open-files-btn").disabled = exporting;
+	for (const id of ["open-files-btn", "empty-open"]) $<HTMLButtonElement>(id).disabled = exporting;
 	for (const id of ["trim-start", "trim-end"]) $<HTMLButtonElement>(id).disabled = !hasMedia;
 	$<HTMLButtonElement>("trim-reset").disabled = !hasMedia || (state.trim.startMs === 0 && state.trim.endMs === state.durationMs);
+	// Look controls edit a recording. With none loaded they used to look live and do nothing visible.
+	// browser-hide-top keeps the tab-capture disable set by its own binding once media exists.
+	const noMediaTitle = hasMedia ? "" : "Open a recording first";
+	for (const id of ["cursor-show", "webcam-show", "frame-shadow-toggle"]) {
+		const el = $<HTMLInputElement>(id);
+		el.disabled = !hasMedia;
+		el.title = noMediaTitle;
+	}
+	$<HTMLInputElement>("browser-hide-top").title = noMediaTitle;
+	for (const id of ["wallpapers", "click-effects", "webcam-pos", "frame-padding-presets"]) {
+		$(id).querySelectorAll<HTMLButtonElement>("button").forEach((b) => {
+			b.disabled = !hasMedia;
+			// Cache the real name once; textContent covers swatches without an explicit aria-label.
+			// Disabled buttons are not announced, so only the tooltip needs the hint.
+			if (!b.dataset.label) b.dataset.label = b.getAttribute("aria-label") || b.textContent?.trim() || "";
+			b.title = hasMedia ? b.dataset.label : noMediaTitle;
+		});
+	}
+	$<HTMLButtonElement>("bg-upload-btn").disabled = !hasMedia || exporting;
 }
 
 function changeTrim(trim: TrimRange) {
@@ -583,7 +663,7 @@ function bindTimeline() {
 		return ((clientX - r.left) / r.width) * state.durationMs;
 	};
 	tl.addEventListener("pointerdown", (e) => {
-		if (!state.durationMs) return;
+		if (!state.durationMs || exporting) return;
 		const block = (e.target as HTMLElement).closest<HTMLElement>(".zoom-block");
 		tl.setPointerCapture(e.pointerId);
 		if (block) {
@@ -620,15 +700,17 @@ function bindTimeline() {
 		tl.addEventListener("pointerup", () => tl.removeEventListener("pointermove", move), { once: true });
 	});
 	tl.addEventListener("keydown", (e) => {
+		if (exporting) return;
 		const block = (e.target as HTMLElement).closest<HTMLElement>(".zoom-block");
 		if (block && (e.key === "Enter" || e.key === " ")) {
 			e.preventDefault();
 			selectRegion(block.dataset.id!);
 			return;
 		}
-		if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+		if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End") {
 			e.preventDefault();
-			seekTo(currentMs() + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 5000 : 1000));
+			const delta = e.key === "Home" ? -state.durationMs : e.key === "End" ? state.durationMs : (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 5000 : 1000);
+			seekTo(currentMs() + delta);
 		}
 	});
 	$("add-zoom").addEventListener("click", addZoomAtPlayhead);
@@ -640,7 +722,7 @@ function bindTimeline() {
 	// tracks the pointer live, and the range is saved once on release.
 	const bindTrimHandle = (el: HTMLElement, edge: "start" | "end") => {
 		el.addEventListener("pointerdown", (e) => {
-			if (!state.durationMs) return;
+			if (!state.durationMs || exporting) return;
 			e.preventDefault();
 			e.stopPropagation(); // a trim handle is not a seek target
 			el.setPointerCapture(e.pointerId);
@@ -648,23 +730,30 @@ function bindTimeline() {
 				state.trim = setTrimEdge(state.trim, edge, Math.round(msAt(ev.clientX)), state.durationMs);
 				syncTrimControls();
 			};
+			const finish = (ev: PointerEvent) => {
+				if (ev.pointerId !== e.pointerId) return;
+				el.removeEventListener("pointermove", move);
+				el.removeEventListener("pointerup", finish);
+				el.removeEventListener("pointercancel", finish);
+				changeTrim(state.trim);
+			};
 			el.addEventListener("pointermove", move);
-			el.addEventListener(
-				"pointerup",
-				() => {
-					el.removeEventListener("pointermove", move);
-					changeTrim(state.trim);
-				},
-				{ once: true },
-			);
+			el.addEventListener("pointerup", finish);
+			el.addEventListener("pointercancel", finish);
 		});
 		el.addEventListener("keydown", (e) => {
-			if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-			if (!state.durationMs) return;
+			if (!state.durationMs || exporting) return;
+			const cur = edge === "start" ? state.trim.startMs : state.trim.endMs;
+			let next = cur;
+			if (e.key === "ArrowLeft" || e.key === "ArrowRight") next = cur + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 5000 : 1000);
+			else if (e.key === "PageDown") next = cur - 10000;
+			else if (e.key === "PageUp") next = cur + 10000;
+			else if (e.key === "Home") next = edge === "start" ? 0 : state.trim.startMs;
+			else if (e.key === "End") next = edge === "end" ? state.durationMs : state.trim.endMs;
+			else return;
 			e.preventDefault();
 			e.stopPropagation(); // don't let the timeline seek as well
-			const step = (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 5000 : 1000);
-			changeTrim(setTrimEdge(state.trim, edge, (edge === "start" ? state.trim.startMs : state.trim.endMs) + step, state.durationMs));
+			changeTrim(setTrimEdge(state.trim, edge, next, state.durationMs));
 		});
 	};
 	bindTrimHandle($("trim-handle-start"), "start");
@@ -685,6 +774,22 @@ function bindTimeline() {
 		// Persist original-source focus, so toggling the crop cannot drift a manual zoom.
 		r.focus = { cx: sc.crop.x + clamp01((lx - mask.x) / mask.width) * sc.crop.width,
 			cy: sc.crop.y + clamp01((ly - mask.y) / mask.height) * sc.crop.height };
+		regionsChanged();
+	});
+	// Same interaction without a pointer: while a manual zoom is selected the canvas takes
+	// keyboard focus (syncZoomPanel) and arrows nudge the focus point inside the crop.
+	canvas.addEventListener("keydown", (e) => {
+		const r = state.regions.find((x) => x.id === state.selectedId);
+		if (!r || r.mode !== "manual") return;
+		const step = e.shiftKey ? 0.05 : 0.01;
+		const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[e.key];
+		if (!d) return;
+		e.preventDefault();
+		e.stopPropagation(); // arrows must not seek the playhead while picking a focus point
+		const sc = scene();
+		const clampCrop = (v: number, lo: number, size: number) => Math.max(lo, Math.min(lo + size, v));
+		r.focus = { cx: clampCrop(r.focus.cx + d[0], sc.crop.x, sc.crop.width),
+			cy: clampCrop(r.focus.cy + d[1], sc.crop.y, sc.crop.height) };
 		regionsChanged();
 	});
 }
@@ -721,6 +826,13 @@ function bindTransport() {
 	camVid.addEventListener("loadeddata", redraw);
 	document.addEventListener("keydown", (e) => {
 		const t = e.target as HTMLElement;
+		// The running export already snapshotted settings. Keyboard edits would change the saved
+		// project without affecting the file, so they are refused until Cancel or completion.
+		if (exporting) {
+			if (e.key === "Escape") $("cancel").click();
+			else if (["Space", "ArrowLeft", "ArrowRight", "KeyZ", "Delete", "Backspace"].includes(e.code) || e.key === "Delete" || e.key === "Backspace") e.preventDefault();
+			return;
+		}
 		// Typing and widget keys keep their native behaviour: sliders, selects, checkboxes, radio
 		// groups and the timeline must not lose Space or the arrows to transport shortcuts.
 		if (t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement || t.isContentEditable) return;
@@ -729,10 +841,11 @@ function bindTransport() {
 			e.preventDefault();
 			if (t instanceof HTMLButtonElement) t.blur();
 			toggle();
-		} else if (!widget && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+		} else if (!widget && (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End")) {
 			if (!state.screenBlob) return;
 			e.preventDefault();
-			seekTo(currentMs() + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 5000 : 1000));
+			const delta = e.key === "Home" ? -state.durationMs : e.key === "End" ? state.durationMs : (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 5000 : 1000);
+			seekTo(currentMs() + delta);
 		} else if ((e.key === "z" || e.key === "Z") && !e.ctrlKey && !e.metaKey && !e.altKey) {
 			if (!state.screenBlob) return;
 			e.preventDefault();
@@ -749,15 +862,35 @@ function bindTransport() {
 	$("empty-open").addEventListener("click", () => !openFiles.disabled && openFiles.click());
 	// Local files (works without the extension too).
 	openFiles.addEventListener("change", async (e) => {
-		const files = [...((e.target as HTMLInputElement).files ?? [])];
+		const input = e.target as HTMLInputElement;
+		const files = [...(input.files ?? [])];
+		input.value = ""; // same-file re-picks must fire change again
 		const vids = files.filter((f) => f.type.startsWith("video/"));
 		const json = files.find((f) => f.name.endsWith(".json"));
-		if (!vids.length) return status("Pick at least one video file");
-		const ev = json ? JSON.parse(await json.text()) : { meta: {}, events: [] };
+		if (!vids.length) return statusTemp("Pick at least one video file");
+		let ev: { meta?: Partial<RecordingMeta>; events?: PointerEvt[] } = { meta: {}, events: [] };
+		if (json) {
+			try {
+				ev = JSON.parse(await json.text());
+			} catch {
+				return statusTemp(`${json.name} is not valid JSON — pick the video again without it, or fix the file`);
+			}
+			if (!ev || typeof ev !== "object" || (ev.events != null && !Array.isArray(ev.events))) {
+				return statusTemp(`${json.name} has no events list — pick the video again without it`);
+			}
+		}
 		const screen = vids.find((v) => !/cam/i.test(v.name)) ?? vids[0];
 		const cam = vids.find((v) => v !== screen) ?? null;
-		$("empty").hidden = true;
-		await loadBundle({ id: "local", createdAt: Date.now(), startedAt: 0, durationMs: 0, surface: "browser", width: 0, height: 0, hasCamera: !!cam, hasMic: false, ...ev.meta }, screen, cam, ev.events ?? []);
+		statusTemp("Opening files…", 30000);
+		try {
+			$("empty").hidden = true;
+			await loadBundle({ id: "local", createdAt: Date.now(), startedAt: 0, durationMs: 0, surface: "browser", width: 0, height: 0, hasCamera: !!cam, hasMic: false, ...ev.meta }, screen, cam, ev.events ?? []);
+		} catch (err) {
+			const why = err instanceof Error ? err.message : "Could not read that file";
+			showEmptyState(`${why}. Try another video, or record again from the Glide toolbar button.`);
+			status(why);
+			syncActions();
+		}
 	});
 
 	// Export runs entirely in this page (WebCodecs + Mediabunny); it never talks to the extension's
@@ -766,9 +899,7 @@ function bindTransport() {
 	const doExport = async (container: "mp4" | "webm") => {
 		if (!state.screenBlob || ctrl) return;
 		ctrl = new AbortController();
-		exporting = true;
-		document.body.classList.add("exporting");
-		syncActions();
+		setExportLock(true);
 		const active = $<HTMLButtonElement>(`export-${container}`);
 		const label = active.textContent;
 		active.textContent = "Exporting…";
@@ -785,7 +916,7 @@ function bindTransport() {
 				// Rough ETA from elapsed wall time; exports run 10×+ realtime on CPU-only machines.
 				const elapsed = (performance.now() - t0) / 1000;
 				const eta = p > 0.03 ? Math.round((elapsed * (1 - p)) / p) : 0;
-				const etaText = eta >= 10 ? ` · about ${eta >= 90 ? `${Math.round(eta / 60)} min` : `${eta} s`} left` : "";
+				const etaText = eta >= 10 ? ` · about ${eta >= 90 ? `${Math.round(eta / 60)} min` : `${eta} s`} left` : p < 0.03 ? " · estimating time" : "";
 				status(`Exporting ${container.toUpperCase()}… ${pctDone}%${etaText}`);
 			}, ctrl.signal);
 			const a = document.createElement("a");
@@ -794,11 +925,10 @@ function bindTransport() {
 			a.click();
 			status(`Exported ${res.width}×${res.height} ${container.toUpperCase()} (${res.videoCodec}${res.audioCodec ? ` + ${res.audioCodec}` : ""}, ${(res.blob.size / 1e6).toFixed(1)} MB) in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
 		} catch (err) {
-			status((err as Error).name === "AbortError" ? "Export cancelled" : `Export failed: ${(err as Error).message}`);
+			status(exportFailure(err));
 		} finally {
 			ctrl = null;
-			exporting = false;
-			document.body.classList.remove("exporting");
+			setExportLock(false);
 			active.textContent = label;
 			prog.hidden = true;
 			$("cancel").hidden = true;
@@ -812,6 +942,16 @@ function bindTransport() {
 	window.addEventListener("beforeunload", (e) => {
 		if (exporting) e.preventDefault();
 	});
+}
+
+/** Name the failure and the next step. Codec and disk errors are the ones users actually hit. */
+function exportFailure(err: unknown): string {
+	if (err instanceof DOMException && err.name === "AbortError") return "Export cancelled";
+	const raw = err instanceof Error ? err.message : String(err);
+	if (/quota|disk|NOSPC|no space/i.test(raw)) return "Export failed: not enough disk space. Free some space and export again.";
+	if (/codec|WebCodecs|encoder/i.test(raw)) return "Export failed: this browser has no encoder for that format. Try the other export button.";
+	if (/trim|duration|frame rate/i.test(raw)) return "Export failed: the trim range is not valid. Reset trim and try again.";
+	return `Export failed: ${raw || "something went wrong"}. Try again, or export the other format.`;
 }
 
 function runExport(container: "mp4" | "webm", onProgress?: (p: number) => void, signal?: AbortSignal): Promise<ExportResult> {
@@ -917,7 +1057,7 @@ async function init() {
 			status("Open files to start");
 		}
 	} catch (e) {
-		const message = String(e);
+		const message = String(e).replace(/^Error:\s*/, "");
 		status(message);
 		showEmptyState(`${message}. It was deleted or isn't on this device — import a video with Open files, or record again from the Glide toolbar button.`);
 		draw(true);

@@ -170,6 +170,11 @@ function stop(): Promise<string> {
 		}, 50);
 		return id;
 	})();
+	// A failed save must not poison retry: keep the session but drop the cached rejection so
+	// the next stop() re-runs the (already-stopped) recorders and retries the IndexedDB write.
+	s.stopping.catch(() => {
+		s.stopping = null;
+	});
 	return s.stopping;
 }
 
@@ -220,7 +225,10 @@ if (isPage) {
 				await stop();
 			} catch (err) {
 				btn.disabled = false;
-				status.textContent = err instanceof Error ? err.message : "Could not save";
+				const why = err instanceof Error ? err.message : "Could not save";
+				status.textContent = /quota|disk|space/i.test(why)
+					? "Not enough disk space to save. Free some space, then press Stop and edit again. Closing this tab discards the recording."
+					: `${why} — the recording is still in this tab. Press Stop and edit to try again.`;
 			}
 			return;
 		}
@@ -228,13 +236,15 @@ if (isPage) {
 		const res = await start(opts);
 		btn.disabled = false;
 		if (!res.ok) {
-			status.textContent = res.error ? `${res.error} — press Start recording to try again.` : "Could not start — press Start recording to try again.";
+			status.textContent = startFailure(res.error);
 			return;
 		}
 		await chrome.storage.local.set({ glideRecording: true });
 		await chrome.action.setBadgeText({ text: "REC" });
+		await chrome.action.setBadgeBackgroundColor({ color: "#e5484d" });
 		btn.textContent = "Stop and edit";
 		btn.className = "btn danger";
+		btn.type = "button";
 		document.getElementById("rec-dot")!.hidden = false;
 		if (lead) lead.textContent = "Recording in progress — keep this tab open. Stop from the Glide toolbar button or the button below; the editor opens next.";
 		// Never print the raw capture id (`web-contents-media-stream://9:17`, `screen:-3:0`).
@@ -246,4 +256,16 @@ if (isPage) {
 					: "Recording the selected screen. Keep this recorder open.";
 		status.textContent = `${what} Zoom and cursor effects are off: Glide cannot verify which tab or window is being recorded.`;
 	});
+	// Guard while the session object exists: stopping is async, so "Saving…" is still unsaved.
+	window.addEventListener("beforeunload", (e) => {
+		if (session) e.preventDefault();
+	});
+}
+
+function startFailure(error?: string) {
+	if (!error) return "Could not start — press Start recording to try again.";
+	if (/NotAllowedError|Permission denied|permission/i.test(error)) return "Chrome blocked the capture. Press Start recording and choose a tab, window, or screen in the dialog.";
+	if (/NotFoundError|no audio|no video|device/i.test(error)) return "No capture device was available. Press Start recording and pick a different source.";
+	if (/NotSupportedError|codec|mime/i.test(error)) return "This browser cannot record that format. Update Chrome, then press Start recording again.";
+	return `${error} — press Start recording to try again.`;
 }

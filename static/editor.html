@@ -115,7 +115,7 @@
         <div id="zoom-depth" class="segmented six" role="radiogroup" aria-labelledby="zoom-level-label"></div>
         <div id="zoom-mode" class="cards" role="radiogroup" aria-label="Zoom mode">
           <button type="button" role="radio" data-value="auto"><b>Auto</b><span>Camera recenters when the cursor nears the edge of the zoomed view</span></button>
-          <button type="button" role="radio" data-value="manual"><b>Manual</b><span>Set a fixed focus point for this zoom (click the preview)</span></button>
+          <button type="button" role="radio" data-value="manual"><b>Manual</b><span>Fixed focus point — click the preview, or focus it and use arrow keys</span></button>
         </div>
         <button id="zoom-delete" type="button" class="btn danger wide">Delete Zoom</button>
       </div>
@@ -123,9 +123,8 @@
   </aside>
 
   <main class="preview" aria-label="Preview">
-    <div class="stage-wrap"><canvas id="stage" width="1920" height="1080" aria-label="Composited video preview"></canvas>
-      <div id="empty" class="empty" hidden><div class="empty-card"><strong id="empty-title">No recording loaded</strong><p>Record from the Glide toolbar button, or open an existing video — plus an optional webcam video with “cam” in its name and an events JSON.</p><button id="empty-open" type="button" class="btn primary">Open files</button></div></div>
-    </div>
+    <div class="stage-wrap"><canvas id="stage" width="1920" height="1080" role="img" aria-label="Composited video preview"></canvas></div>
+    <div id="empty" class="empty" hidden><div class="empty-card"><strong id="empty-title">No recording loaded</strong><p>Record from the Glide toolbar button, or open a screen video. Add a webcam video with “cam” in its name, and an events JSON, only if you have them.</p><button id="empty-open" type="button" class="btn primary">Open files</button></div></div>
     <div class="transport">
       <button id="play" type="button" class="btn icon" aria-pressed="false" aria-label="Play"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></svg></button>
       <span id="time" class="mono">0:00.0 / 0:00.0</span>
@@ -140,7 +139,7 @@
     <button id="add-zoom" type="button" class="btn small">+ Zoom</button>
     <button id="suggest-zooms" type="button" class="btn small ghost">Suggest Zooms</button>
     <span id="seg-count" class="hint"></span>
-    <span id="shortcut-hint" class="hint">Space play · ←/→ seek · Z zoom · Delete removes zoom · drag edges to trim</span>
+    <span id="shortcut-hint" class="hint">Space play · ←/→ seek · Home/End jump · Z zoom · Delete removes zoom · drag the blue edges to trim, or focus one and use ←/→</span>
     <span class="spacer"></span>
     <div class="trim-controls" role="group" aria-label="Retained video range">
       <button id="trim-start" type="button" class="btn small ghost" title="Keep from the playhead">Set start</button>
@@ -151,7 +150,7 @@
   </div>
   <div id="timeline" class="timeline" role="slider" tabindex="0" aria-label="Playhead" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
     <div id="ruler" class="ruler"></div>
-    <div class="track clip-track"><div class="clip">Recording</div><div id="clicks" class="clicks"></div><div id="trim-before" class="trim-excluded before" aria-hidden="true"></div><div id="trim-after" class="trim-excluded after" aria-hidden="true"></div><div id="trim-handle-start" class="trim-handle" role="slider" tabindex="0" aria-label="Trim start" title="Drag to trim the start" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" hidden></div><div id="trim-handle-end" class="trim-handle" role="slider" tabindex="0" aria-label="Trim end" title="Drag to trim the end" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" hidden></div></div>
+    <div class="track clip-track"><div class="clip">Recording</div><div id="clicks" class="clicks"></div><div id="trim-before" class="trim-excluded before" aria-hidden="true"></div><div id="trim-after" class="trim-excluded after" aria-hidden="true"></div><div id="trim-handle-start" class="trim-handle" role="slider" tabindex="0" aria-label="Trim start" aria-keyshortcuts="ArrowLeft ArrowRight Home End" title="Drag, or focus and use arrow keys. Shift moves 5 seconds." aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" hidden></div><div id="trim-handle-end" class="trim-handle" role="slider" tabindex="0" aria-label="Trim end" aria-keyshortcuts="ArrowLeft ArrowRight Home End" title="Drag, or focus and use arrow keys. Shift moves 5 seconds." aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" hidden></div></div>
     <div id="zoom-track" class="track zoom-track" aria-label="Zoom regions"></div>
     <div id="playhead" class="playhead"></div>
   </div>

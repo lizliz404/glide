@@ -86,6 +86,24 @@ async function setBadge(on: boolean) {
 	if (on) await chrome.action.setBadgeBackgroundColor({ color: "#e5484d" });
 }
 
+// Closing a page-mode recorder tab mid-recording kills the session silently: no "saved" and
+// no "failed" ever arrives, leaving the REC badge and glideRecording flag stuck. Clean up here.
+// Normal stops send "saved" before the tab closes, which already clears the flag, so the
+// storage check keeps that path a no-op.
+chrome.tabs.onRemoved.addListener((tabId) => {
+	if (tabId !== recorderOwnerId) return;
+	recorderOwnerId = null;
+	void (async () => {
+		const { glideRecording } = await chrome.storage.local.get("glideRecording");
+		if (!glideRecording) return;
+		// Another recorder page may still own the session (prepare-page can re-point the owner).
+		const live = await askRecorder("status");
+		if (live?.recording) return;
+		await stopPointerLogging();
+		await setBadge(false);
+	})();
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 	if (msg?.target !== "background") return;
 	(async () => {

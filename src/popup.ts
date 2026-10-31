@@ -112,7 +112,10 @@ startBtn.addEventListener("click", async () => {
 		window.close();
 		return;
 	}
-	status.textContent = res?.error ?? "Could not start recording";
+	const why = res?.error ?? "Could not start recording";
+	status.textContent = /NotAllowed|permission/i.test(why)
+		? "Chrome blocked the capture. Press Record and choose a source in the dialog."
+		: `${why} — press Record to try again.`;
 });
 
 stopBtn.addEventListener("click", async () => {
@@ -124,7 +127,7 @@ stopBtn.addEventListener("click", async () => {
 	}));
 	if (res && res.ok === false) {
 		stopBtn.disabled = false;
-		status.textContent = res.error ?? "Could not stop";
+		status.textContent = `${res.error ?? "Could not stop"} — the recording is still running. Press Stop and edit again.`;
 		return;
 	}
 	window.close();
