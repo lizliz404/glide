@@ -8,20 +8,35 @@
 [hidden] { display: none !important; }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); }
-a { color: var(--accent); }
+a { color: var(--accent); text-underline-offset: 2px; }
+::selection { background: rgba(79,140,255,.35); }
 .brand { font-weight: 700; letter-spacing: -0.01em; }
-.btn { appearance: none; border: 1px solid var(--line); background: #1a1f2b; color: var(--text); border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
+.btn { appearance: none; border: 1px solid var(--line); background: #1a1f2b; color: var(--text); border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; transition: background .12s ease, border-color .12s ease, opacity .12s ease; }
 .btn:hover { background: #222838; }
+/* Variant rules must come after .btn:hover AND carry their own :hover, or filled buttons lose
+   hover feedback entirely. Hovers go darker: lighter fills drop white-on-fill below AA. */
 .btn.primary { background: var(--accent-fill); border-color: var(--accent-fill); color: #fff; }
+.btn.primary:hover { background: #2a63cc; border-color: #2a63cc; }
 .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.danger:hover { background: #b32d32; border-color: #b32d32; }
 .btn.ghost { background: transparent; }
+.btn.ghost:hover { background: #1a1f2b; }
 .btn.wide { width: 100%; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 label { display: flex; align-items: center; gap: 8px; justify-content: space-between; margin: 8px 0; }
 label.check { justify-content: flex-start; }
+label.check:has(input:disabled) { opacity: .55; }
+/* Small block label above a full-width field (popup's capture picker). */
+label.plain { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.check-row { display: flex; gap: 14px; margin: 4px 0 10px; }
+.check-row .check { flex: 1; margin: 0; }
 input[type=range] { flex: 1; accent-color: var(--accent); }
+input[type=checkbox]:disabled { cursor: not-allowed; }
 output { min-width: 3.2em; text-align: right; color: var(--muted); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 select, input[type=color] { background: #1a1f2b; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; font: inherit; }
+select.wide { width: 100%; padding: 7px 8px; }
+select:disabled { opacity: .55; cursor: not-allowed; }
+progress { accent-color: var(--accent); }
 .hint { color: var(--muted); font-size: 12px; }
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--muted); }
 /* popup */
@@ -29,8 +44,17 @@ select, input[type=color] { background: #1a1f2b; color: var(--text); border: 1px
 .popup h1 { margin: 0 0 8px; font-size: 18px; }
 .popup h2 { font-size: 12px; color: var(--muted); margin: 12px 0 4px; text-transform: uppercase; letter-spacing: .06em; }
 .popup ul { list-style: none; padding: 0; margin: 0; font-size: 12px; }
-.popup li { padding: 3px 0; }
+.popup li { padding: 0; }
+/* Recent rows are links: give the whole row a hit target, not just the text. */
+.popup li a { display: block; padding: 6px 8px; margin: 0 -8px; border-radius: 6px; color: var(--text); text-decoration: none; }
+.popup li a:hover { background: #1a1f2b; }
+.popup #status:empty, .page #status:empty { display: none; }
 .page { max-width: 560px; margin: 48px auto; padding: 0 20px; }
+.page h1 { font-size: 20px; margin: 0 0 10px; }
+/* Recording-in-progress dot on the visible recorder page. */
+.rec-dot { display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 50%; background: #e5484d; }
+.rec-dot.live { animation: recpulse 1.6s ease-in-out infinite; }
+@keyframes recpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 /* editor: Recordly-like shell (header / rail + panel + preview / timeline) */
 body.editor { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; overflow: hidden; }
 .topbar { display: flex; align-items: center; gap: 14px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
@@ -46,6 +70,7 @@ body.editor { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1
 .rail [role=tab]:hover { background: #1a1f2b; color: var(--text); }
 .rail [role=tab][aria-selected=true] { background: rgba(79,140,255,.16); color: var(--accent); }
 .panel { border-right: 1px solid var(--line); background: var(--panel); padding: 6px 16px 20px; overflow-y: auto; }
+.panel, .grid.wallpapers { scrollbar-width: thin; scrollbar-color: #2b3242 transparent; }
 .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 16px 0 8px; font-weight: 600; }
 .panel .label { display: block; margin: 8px 0 6px; }
 .grid { display: grid; gap: 6px; margin: 8px 0; }
@@ -62,8 +87,8 @@ body.editor { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1
 .cards button { display: grid; gap: 2px; text-align: left; border: 1px solid var(--line); background: #151924; color: var(--text); border-radius: 10px; padding: 9px 11px; font: inherit; cursor: pointer; }
 .cards button span { color: var(--muted); font-size: 12px; }
 .cards button[aria-checked=true] { border-color: var(--accent); background: rgba(79,140,255,.12); }
-.pos-grid { display: grid; grid-template-columns: repeat(3, 22px); gap: 4px; }
-.pos-grid button { width: 22px; height: 16px; border-radius: 4px; border: 1px solid var(--line); background: #151924; padding: 0; cursor: pointer; }
+.pos-grid { display: grid; grid-template-columns: repeat(3, 24px); gap: 4px; }
+.pos-grid button { width: 24px; height: 18px; border-radius: 4px; border: 1px solid var(--line); background: #151924; padding: 0; cursor: pointer; }
 .pos-grid button[aria-checked=true] { background: var(--accent); border-color: var(--accent); }
 .btn.small { padding: 4px 10px; font-size: 12px; }
 .btn.icon { min-width: 40px; padding: 6px 10px; }
@@ -71,7 +96,11 @@ body.editor { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1
 .stage-wrap { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; }
 #stage { max-width: 100%; max-height: 100%; display: block; border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,.45); }
 #stage.pick { cursor: crosshair; }
-.empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 40px; text-align: center; color: var(--muted); }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; }
+/* The empty/error state floats over the wallpapered canvas, so it needs a real card to stay readable. */
+.empty-card { max-width: 430px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 26px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.empty-card strong { display: block; font-size: 15px; margin-bottom: 6px; }
+.empty-card p { margin: 0 0 16px; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .transport { display: flex; align-items: center; gap: 12px; }
 .spacer { flex: 1; }
 label.inline { margin: 0; gap: 6px; color: var(--muted); }
@@ -81,15 +110,23 @@ label.inline { margin: 0; gap: 6px; color: var(--muted); }
 .trim-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .trim-controls .mono { font-size: 12px; color: var(--text); }
 .trim-excluded { position: absolute; top: 0; bottom: 0; background: rgba(9,11,16,.8); pointer-events: none; }
-#trim-before { left: 0; border-right: 1px solid var(--accent); }
-#trim-after { right: 0; border-left: 1px solid var(--accent); }
+/* before sits left of the retained range, after on the right; they dim both the clip and zoom lanes. */
+.trim-excluded.before { left: 0; border-right: 1px solid var(--accent); }
+.trim-excluded.after { right: 0; border-left: 1px solid var(--accent); }
+/* Draggable edges of the retained range, centred on the trim line. */
+.trim-handle { position: absolute; top: 0; bottom: 0; width: 11px; margin-left: -5px; cursor: ew-resize; }
+.trim-handle::before { content: ""; position: absolute; top: 0; bottom: 0; left: 5px; width: 2px; background: var(--accent); }
+.trim-handle:hover::before, .trim-handle:focus-visible::before { left: 4px; width: 4px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(79,140,255,.3); }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
+/* Export owns the page: the running encode snapshots settings, so mid-export edits can only confuse. */
+body.exporting .rail, body.exporting .panel, body.exporting .timeline-panel, body.exporting .transport { pointer-events: none; opacity: .55; }
+body.exporting .stage-wrap { pointer-events: none; }
 @media (max-width: 1100px) { .tl-toolbar { flex-wrap: wrap; } .trim-controls { margin-left: auto; } }
 .timeline { position: relative; user-select: none; cursor: pointer; border-radius: 8px; padding-bottom: 4px; }
 .ruler { position: relative; height: 18px; font-size: 10px; color: var(--muted); }
 .ruler span { position: absolute; top: 2px; transform: translateX(-50%); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .track { position: relative; height: 30px; margin-top: 4px; border-radius: 6px; background: #151924; border: 1px solid var(--line); }
-.clip { position: absolute; inset: 3px; border-radius: 4px; background: linear-gradient(180deg,#2a3346,#222a3a); color: var(--muted); font-size: 11px; padding: 5px 8px; }
+.clip { position: absolute; inset: 3px; border-radius: 4px; background: linear-gradient(180deg,#2a3346,#222a3a); color: #c8cedd; font-size: 11px; padding: 5px 8px; }
 .clicks i { position: absolute; top: 4px; bottom: 4px; width: 2px; margin-left: -1px; background: #fff; opacity: .7; border-radius: 1px; }
 .zoom-block { position: absolute; top: 3px; bottom: 3px; background: rgba(139,92,246,.35); border: 1px solid rgba(167,139,250,.95); border-radius: 5px; color: #ede9fe; font-size: 11px; padding: 0 10px; display: flex; align-items: center; overflow: hidden; white-space: nowrap; cursor: grab; }
 .zoom-block[aria-pressed=true] { background: rgba(139,92,246,.6); box-shadow: 0 0 0 2px #c4b5fd; }
@@ -98,4 +135,4 @@ label.inline { margin: 0; gap: 6px; color: var(--muted); }
 .playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #f43f5e; pointer-events: none; }
 .playhead::before { content: ""; position: absolute; top: 0; left: -5px; border: 6px solid transparent; border-top-color: #f43f5e; }
 .credit { padding: 4px 16px 6px; font-size: 11px; color: var(--muted); background: var(--panel); text-align: right; }
-@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

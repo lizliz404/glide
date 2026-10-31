@@ -50,7 +50,8 @@ async function restore() {
 		const a = document.createElement("a");
 		a.href = `editor.html?id=${encodeURIComponent(r.id)}`;
 		a.target = "_blank";
-		a.textContent = `${SURFACE_LABEL[r.surface] ?? r.surface} · ${(r.durationMs / 1000).toFixed(0)}s · ${new Date(r.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })} · ${timeAgo(r.createdAt)}`;
+		a.title = new Date(r.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+		a.textContent = `${SURFACE_LABEL[r.surface] ?? r.surface} · ${(r.durationMs / 1000).toFixed(0)}s · ${timeAgo(r.createdAt)}`;
 		li.append(a);
 		ul.append(li);
 	}

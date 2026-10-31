@@ -61,7 +61,19 @@ const state = {
 const comp = new Compositor(state.settings);
 /** True while an export owns the page; export and file-import actions are locked out. */
 let exporting = false;
-const status = (msg: string) => ($("status").textContent = msg);
+const SURFACE_LABEL: Record<Surface, string> = { browser: "Tab", window: "Window", monitor: "Screen" };
+let stickyStatus = "Loading…";
+let tempTimer = 0;
+const status = (msg: string) => {
+	stickyStatus = msg;
+	$("status").textContent = msg;
+};
+/** Transient feedback in the status line; reverts to the last sticky message after a few seconds. */
+const statusTemp = (msg: string, ms = 4000) => {
+	$("status").textContent = msg;
+	clearTimeout(tempTimer);
+	tempTimer = window.setTimeout(() => ($("status").textContent = stickyStatus), ms);
+};
 const fmt = (ms: number) => {
 	const s = Math.max(0, ms / 1000);
 	return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
@@ -181,10 +193,13 @@ function radios(container: HTMLElement, get: () => string, set: (v: string) => v
 		next.focus();
 	});
 	const sync = () => {
-		for (const b of buttons()) {
+		const list = buttons();
+		// Roving tabindex needs one tabbable item even when nothing is checked (custom upload, legacy value).
+		const anyChecked = list.some((b) => b.dataset.value === get());
+		for (const b of list) {
 			const on = b.dataset.value === get();
 			b.setAttribute("aria-checked", String(on));
-			b.tabIndex = on ? 0 : -1;
+			b.tabIndex = on || (!anyChecked && b === list[0]) ? 0 : -1;
 		}
 	};
 	bindings.push({ sync });
@@ -202,7 +217,9 @@ function syncPickers() {
 	const bg = state.settings.frame.background;
 	const value = bg.kind === "image" ? bg.url : "";
 	for (const b of document.querySelectorAll<HTMLButtonElement>("#wallpapers [role=radio]")) b.setAttribute("aria-checked", String(b.dataset.value === value));
-	$("webcam-none").hidden = hasCam();
+	// Explain controls that can do nothing for this recording instead of leaving dead toggles.
+	$("webcam-none").hidden = !state.screenBlob || hasCam();
+	$("cursor-none").hidden = !state.screenBlob || state.telemetry.length > 0;
 }
 
 function bindControls() {
@@ -220,10 +237,13 @@ function bindControls() {
 		$(parent).append(b);
 		return b;
 	};
-	for (const w of WALLPAPERS) swatch("wallpapers", w.url, `url("${w.url}") center / cover`, w.label).addEventListener("click", () => {
-		S().frame.background = { kind: "image", url: w.url };
-		settingsChanged();
-	});
+	for (const w of WALLPAPERS) swatch("wallpapers", w.url, `url("${w.url}") center / cover`, w.label);
+	// Same radiogroup wiring as the other pickers: roving tabindex + arrow-key navigation.
+	radios($("wallpapers"), () => {
+		const bg = S().frame.background;
+		return bg.kind === "image" ? bg.url : "";
+	}, (v) => (S().frame.background = { kind: "image", url: v }));
+	$("bg-upload-btn").addEventListener("click", () => $<HTMLInputElement>("bg-upload").click());
 	$<HTMLInputElement>("bg-upload").addEventListener("change", (e) => {
 		const f = (e.target as HTMLInputElement).files?.[0];
 		if (!f) return;
@@ -432,15 +452,22 @@ function runSuggestions() {
 	state.regions = suggestZoomRegions(state.telemetry, state.durationMs, sc.videoW && sc.videoH ? sc.videoW / sc.videoH : 16 / 9, state.settings.zoom);
 	state.selectedId = null;
 	regionsChanged();
+	if (state.screenBlob) {
+		const n = state.regions.length;
+		statusTemp(n ? `Suggested ${n} zoom${n === 1 ? "" : "s"} from this recording's clicks` : "No clicks in this recording — nothing to suggest");
+	}
 }
 
 function addZoomAtPlayhead() {
 	const t = Math.round(currentMs());
 	const next = state.regions.find((r) => r.startMs > t);
 	const inside = state.regions.find((r) => t >= r.startMs && t < r.endMs);
-	if (inside) return selectRegion(inside.id);
+	if (inside) {
+		statusTemp("Playhead is inside a zoom — selected it");
+		return selectRegion(inside.id);
+	}
 	const end = Math.min(state.durationMs, next ? next.startMs : Number.POSITIVE_INFINITY, t + NEW_REGION_MS);
-	if (end - t < MIN_REGION_MS) return status("No room for a zoom here");
+	if (end - t < MIN_REGION_MS) return statusTemp("No room for a zoom here — move the playhead or shorten the next zoom");
 	const r: ZoomRegion = { id: `zoom-${crypto.randomUUID()}`, startMs: t, endMs: end, depth: DEFAULT_ZOOM_DEPTH, focus: { cx: 0.5, cy: 0.5 }, mode: "auto" };
 	state.regions.push(r);
 	regionsChanged();
@@ -483,6 +510,14 @@ function drawTimeline() {
 		b.innerHTML = `<span class="handle l"></span>${ZOOM_DEPTH_SCALES[r.depth]}×${r.mode === "manual" ? " · manual" : ""}<span class="handle r"></span>`;
 		track.append(b);
 	}
+	// Zooms outside the retained range are dimmed like the clip lane. Recreated with the blocks;
+	// pointer-events:none, so they never intercept block drags.
+	for (const side of ["before", "after"]) {
+		const dim = document.createElement("div");
+		dim.className = `trim-excluded ${side}`;
+		dim.setAttribute("aria-hidden", "true");
+		track.append(dim);
+	}
 	const tl = $("timeline");
 	tl.setAttribute("aria-valuemax", String(Math.round(d)));
 	$("seg-count").textContent = `${state.regions.length} zoom${state.regions.length === 1 ? "" : "s"} · ${state.telemetry.filter((p) => p.interactionType && p.interactionType !== "move" && p.interactionType !== "mouseup").length} clicks`;
@@ -492,8 +527,17 @@ function drawTimeline() {
 
 function syncTrimControls() {
 	const { startMs, endMs } = state.trim;
-	$("trim-before").style.width = pctOf(startMs);
-	$("trim-after").style.width = pctOf(Math.max(0, state.durationMs - endMs));
+	for (const el of document.querySelectorAll<HTMLElement>(".trim-excluded.before")) el.style.width = pctOf(startMs);
+	for (const el of document.querySelectorAll<HTMLElement>(".trim-excluded.after")) el.style.width = pctOf(Math.max(0, state.durationMs - endMs));
+	// Drag handles sit on the trim lines; they only make sense once media is loaded.
+	for (const [id, ms] of [["trim-handle-start", startMs], ["trim-handle-end", endMs]] as const) {
+		const h = $(id);
+		h.hidden = !state.screenBlob;
+		h.style.left = pctOf(ms);
+		h.setAttribute("aria-valuemax", String(Math.round(state.durationMs)));
+		h.setAttribute("aria-valuenow", String(Math.round(ms)));
+		h.setAttribute("aria-valuetext", fmt(ms));
+	}
 	$("trim-range").textContent = `${fmt(startMs)}–${fmt(endMs)} · ${fmt(endMs - startMs)} kept`;
 	syncActions();
 }
@@ -504,6 +548,7 @@ function syncActions() {
 	for (const id of ["export-mp4", "export-webm"]) $<HTMLButtonElement>(id).disabled = !hasMedia || exporting;
 	for (const id of ["add-zoom", "suggest-zooms"]) $<HTMLButtonElement>(id).disabled = !hasMedia;
 	$<HTMLInputElement>("open-files").disabled = exporting;
+	$<HTMLButtonElement>("open-files-btn").disabled = exporting;
 	for (const id of ["trim-start", "trim-end"]) $<HTMLButtonElement>(id).disabled = !hasMedia;
 	$<HTMLButtonElement>("trim-reset").disabled = !hasMedia || (state.trim.startMs === 0 && state.trim.endMs === state.durationMs);
 }
@@ -591,6 +636,39 @@ function bindTimeline() {
 	$("trim-start").addEventListener("click", () => changeTrim(setTrimEdge(state.trim, "start", currentMs(), state.durationMs)));
 	$("trim-end").addEventListener("click", () => changeTrim(setTrimEdge(state.trim, "end", currentMs(), state.durationMs)));
 	$("trim-reset").addEventListener("click", () => changeTrim(fullTrim(state.durationMs)));
+	// Trim edges are draggable on the clip lane (same model as zoom-block resize): the overlay
+	// tracks the pointer live, and the range is saved once on release.
+	const bindTrimHandle = (el: HTMLElement, edge: "start" | "end") => {
+		el.addEventListener("pointerdown", (e) => {
+			if (!state.durationMs) return;
+			e.preventDefault();
+			e.stopPropagation(); // a trim handle is not a seek target
+			el.setPointerCapture(e.pointerId);
+			const move = (ev: PointerEvent) => {
+				state.trim = setTrimEdge(state.trim, edge, Math.round(msAt(ev.clientX)), state.durationMs);
+				syncTrimControls();
+			};
+			el.addEventListener("pointermove", move);
+			el.addEventListener(
+				"pointerup",
+				() => {
+					el.removeEventListener("pointermove", move);
+					changeTrim(state.trim);
+				},
+				{ once: true },
+			);
+		});
+		el.addEventListener("keydown", (e) => {
+			if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+			if (!state.durationMs) return;
+			e.preventDefault();
+			e.stopPropagation(); // don't let the timeline seek as well
+			const step = (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 5000 : 1000);
+			changeTrim(setTrimEdge(state.trim, edge, (edge === "start" ? state.trim.startMs : state.trim.endMs) + step, state.durationMs));
+		});
+	};
+	bindTrimHandle($("trim-handle-start"), "start");
+	bindTrimHandle($("trim-handle-end"), "end");
 	// Manual focus: click the preview while a manual zoom is selected (inverse of the camera transform).
 	canvas.addEventListener("click", (e) => {
 		const r = state.regions.find((x) => x.id === state.selectedId);
@@ -625,14 +703,16 @@ function bindTransport() {
 			camVid.pause();
 		}
 	};
+	const ICON_PLAY = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M7 4.5v15l12-7.5z" fill="currentColor"/></svg>';
+	const ICON_PAUSE = '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M6.5 4h3.4v16H6.5zM14.1 4h3.4v16h-3.4z" fill="currentColor"/></svg>';
 	play.addEventListener("click", toggle);
 	screenVid.addEventListener("play", () => {
-		play.textContent = "❚❚";
+		play.innerHTML = ICON_PAUSE;
 		play.setAttribute("aria-label", "Pause");
 		play.setAttribute("aria-pressed", "true");
 	});
 	screenVid.addEventListener("pause", () => {
-		play.textContent = "▶";
+		play.innerHTML = ICON_PLAY;
 		play.setAttribute("aria-label", "Play");
 		play.setAttribute("aria-pressed", "false");
 	});
@@ -663,8 +743,12 @@ function bindTransport() {
 		} else if (e.key === "Escape") selectRegion(null, false);
 	});
 
+	// The visible button forwards to the hidden file input; same for the empty-state CTA.
+	const openFiles = $<HTMLInputElement>("open-files");
+	$("open-files-btn").addEventListener("click", () => !openFiles.disabled && openFiles.click());
+	$("empty-open").addEventListener("click", () => !openFiles.disabled && openFiles.click());
 	// Local files (works without the extension too).
-	$<HTMLInputElement>("open-files").addEventListener("change", async (e) => {
+	openFiles.addEventListener("change", async (e) => {
 		const files = [...((e.target as HTMLInputElement).files ?? [])];
 		const vids = files.filter((f) => f.type.startsWith("video/"));
 		const json = files.find((f) => f.name.endsWith(".json"));
@@ -683,6 +767,7 @@ function bindTransport() {
 		if (!state.screenBlob || ctrl) return;
 		ctrl = new AbortController();
 		exporting = true;
+		document.body.classList.add("exporting");
 		syncActions();
 		const active = $<HTMLButtonElement>(`export-${container}`);
 		const label = active.textContent;
@@ -695,8 +780,13 @@ function bindTransport() {
 		try {
 			const res = await runExport(container, (p) => {
 				prog.value = p;
-				active.textContent = `Exporting… ${Math.round(p * 100)}%`;
-				status(`Exporting ${container.toUpperCase()}… ${Math.round(p * 100)}%`);
+				const pctDone = Math.round(p * 100);
+				active.textContent = `Exporting… ${pctDone}%`;
+				// Rough ETA from elapsed wall time; exports run 10×+ realtime on CPU-only machines.
+				const elapsed = (performance.now() - t0) / 1000;
+				const eta = p > 0.03 ? Math.round((elapsed * (1 - p)) / p) : 0;
+				const etaText = eta >= 10 ? ` · about ${eta >= 90 ? `${Math.round(eta / 60)} min` : `${eta} s`} left` : "";
+				status(`Exporting ${container.toUpperCase()}… ${pctDone}%${etaText}`);
 			}, ctrl.signal);
 			const a = document.createElement("a");
 			a.href = URL.createObjectURL(res.blob);
@@ -708,6 +798,7 @@ function bindTransport() {
 		} finally {
 			ctrl = null;
 			exporting = false;
+			document.body.classList.remove("exporting");
 			active.textContent = label;
 			prog.hidden = true;
 			$("cancel").hidden = true;
@@ -717,6 +808,10 @@ function bindTransport() {
 	$("export-mp4").addEventListener("click", () => doExport("mp4"));
 	$("export-webm").addEventListener("click", () => doExport("webm"));
 	$("cancel").addEventListener("click", () => ctrl?.abort());
+	// An encode can run for minutes; warn before the tab throws it away.
+	window.addEventListener("beforeunload", (e) => {
+		if (exporting) e.preventDefault();
+	});
 }
 
 function runExport(container: "mp4" | "webm", onProgress?: (p: number) => void, signal?: AbortSignal): Promise<ExportResult> {
@@ -789,7 +884,7 @@ async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, e
 	comp.reset();
 	draw(true);
 	const clicks = state.telemetry.filter((p) => p.interactionType !== "move" && p.interactionType !== "mouseup").length;
-	status(`${surface} capture · ${screenVid.videoWidth}×${screenVid.videoHeight} · ${fmt(state.durationMs)} · ${clicks} clicks → ${state.regions.length} zooms`);
+	status(`${SURFACE_LABEL[surface] ?? surface} capture · ${screenVid.videoWidth}×${screenVid.videoHeight} · ${fmt(state.durationMs)} · ${clicks} clicks → ${state.regions.length} zooms`);
 	document.body.dataset.ready = "1";
 	syncActions();
 }
@@ -835,6 +930,7 @@ function showEmptyState(message: string) {
 	const empty = $("empty");
 	empty.hidden = false;
 	empty.setAttribute("role", "alert");
+	$("empty-title").textContent = "Couldn't open this recording";
 	empty.querySelector("p")!.textContent = message;
 }
 

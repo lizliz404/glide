@@ -228,12 +228,15 @@ if (isPage) {
 		const res = await start(opts);
 		btn.disabled = false;
 		if (!res.ok) {
-			status.textContent = res.error ?? "Could not start";
+			status.textContent = res.error ? `${res.error} — press Start recording to try again.` : "Could not start — press Start recording to try again.";
 			return;
 		}
 		await chrome.storage.local.set({ glideRecording: true });
 		await chrome.action.setBadgeText({ text: "REC" });
 		btn.textContent = "Stop and edit";
+		btn.className = "btn danger";
+		document.getElementById("rec-dot")!.hidden = false;
+		if (lead) lead.textContent = "Recording in progress — keep this tab open. Stop from the Glide toolbar button or the button below; the editor opens next.";
 		// Never print the raw capture id (`web-contents-media-stream://9:17`, `screen:-3:0`).
 		const what =
 			res.surface === "window"
