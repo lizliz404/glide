@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>Glide · teleprompter</title><link rel="stylesheet" href="ui.css" /></head>
+<body class="tele">
+  <header id="drag" class="tele-bar">
+    <span class="tele-grip" aria-hidden="true">⋮⋮</span>
+    <span class="hint">Teleprompter</span>
+    <span class="spacer"></span>
+    <button id="edit" type="button" class="btn small ghost">Edit</button>
+  </header>
+  <textarea id="script" aria-label="Teleprompter script" placeholder="Paste the lines you want to read. Space = scroll/pause · ↑↓ nudge · drag the top bar to move."></textarea>
+  <div id="prompter" class="tele-prompter" hidden tabindex="0" aria-label="Presenting script"></div>
+  <footer class="tele-controls">
+    <label class="inline" for="speed">Speed <input id="speed" type="range" min="8" max="80" value="28" /></label>
+    <label class="inline" for="fs">Size <input id="fs" type="range" min="12" max="48" value="22" /></label>
+    <label class="inline" for="tele-opacity">Dim <input id="tele-opacity" type="range" min="30" max="100" value="100" /></label>
+    <button id="pause-scroll" type="button" class="btn small ghost" aria-pressed="false">Pause</button>
+  </footer>
+  <script type="module" src="teleprompter.js"></script>
+</body>
+</html>

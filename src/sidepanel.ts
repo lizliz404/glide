@@ -29,14 +29,7 @@ const cam = $<HTMLVideoElement>("cam");
 const camFallback = $<HTMLElement>("cam-fallback");
 const micLabel = $<HTMLElement>("mic-label");
 const micFill = $<HTMLElement>("mic-level");
-const scriptEl = $<HTMLTextAreaElement>("script");
-const prompter = $<HTMLElement>("prompter");
-const presentBtn = $<HTMLButtonElement>("present");
-const presentControls = $<HTMLElement>("present-controls");
-const speed = $<HTMLInputElement>("speed");
-const fontSize = $<HTMLInputElement>("fs");
-const teleOpacity = $<HTMLInputElement>("tele-opacity");
-const pauseScroll = $<HTMLButtonElement>("pause-scroll");
+const teleToggle = $<HTMLButtonElement>("tele-toggle");
 const captureHint = $<HTMLElement>("capture-hint");
 const stopBtn = $<HTMLButtonElement>("stop");
 
@@ -45,11 +38,6 @@ let since = 0;
 let opts: Opts = { mic: false, camera: false, surface: "browser" };
 let poll = 0;
 let clock = 0;
-let scriptTimer = 0;
-let teleTimer = 0;
-let presenting = false;
-let scrollPaused = false;
-let scrollRaf = 0;
 let meterRaf = 0;
 let camStream: MediaStream | null = null;
 let micStream: MediaStream | null = null;
@@ -183,78 +171,18 @@ function closeMic() {
 	micLabel.textContent = opts.mic ? "Mic off" : "Mic off";
 }
 
-function setPresent(on: boolean) {
-	presenting = on;
-	scriptEl.hidden = on;
-	prompter.hidden = !on;
-	presentControls.hidden = !on;
-	presentBtn.textContent = on ? "Edit" : "Present";
-	presentBtn.setAttribute("aria-pressed", String(on));
-	if (on) {
-		prompter.textContent = scriptEl.value || "No script yet.";
-		prompter.scrollTop = 0;
-		scrollPaused = false;
-		pauseScroll.textContent = "Pause";
-		pauseScroll.setAttribute("aria-pressed", "false");
-		startScroll();
-		prompter.focus();
-	} else stopScroll();
-}
-
-function startScroll() {
-	stopScroll();
-	let last = 0;
-	const step = (now: number) => {
-		if (!presenting) return;
-		if (!scrollPaused && last) {
-			const pxPerSec = Number(speed.value) || 28;
-			prompter.scrollTop += ((now - last) / 1000) * pxPerSec;
-		}
-		last = now;
-		scrollRaf = requestAnimationFrame(step);
-	};
-	scrollRaf = requestAnimationFrame(step);
-}
-
-function stopScroll() {
-	cancelAnimationFrame(scrollRaf);
-	scrollRaf = 0;
-}
-
-function queueScriptSave() {
-	clearTimeout(scriptTimer);
-	scriptTimer = window.setTimeout(() => {
-		void chrome.storage.local.set({ glideScript: scriptEl.value });
-	}, 400);
-}
-
-function applyTelePrefs() {
-	prompter.style.fontSize = `${fontSize.value}px`;
-	prompter.style.opacity = String(Number(teleOpacity.value) / 100);
-}
-
-function queueTeleSave() {
-	clearTimeout(teleTimer);
-	teleTimer = window.setTimeout(() => {
-		void chrome.storage.local.set({
-			glideTele: { speed: Number(speed.value), fontSize: Number(fontSize.value), opacity: Number(teleOpacity.value) },
-		});
-	}, 400);
+async function syncTeleToggle() {
+	const st = await bg<{ open: boolean }>({ type: "tele-state" }).catch(() => null);
+	teleToggle.textContent = st?.open ? "Close teleprompter" : "Teleprompter";
+	teleToggle.setAttribute("aria-pressed", String(!!st?.open));
 }
 
 async function restore() {
-	const stored = await chrome.storage.local.get(["glideOpts", "glideScript", "glideTele", "glideRecording"]);
+	const stored = await chrome.storage.local.get(["glideOpts", "glideRecording"]);
 	if (stored.glideOpts) opts = stored.glideOpts as Opts;
-	if (typeof stored.glideScript === "string") scriptEl.value = stored.glideScript;
-	if (stored.glideTele) {
-		const t = stored.glideTele as { speed?: number; fontSize?: number; opacity?: number };
-		if (t.speed != null) speed.value = String(t.speed);
-		if (t.fontSize != null) fontSize.value = String(t.fontSize);
-		if (t.opacity != null) teleOpacity.value = String(t.opacity);
-	}
-	applyTelePrefs();
 	if (stored.glideRecording) startLoops();
 	await refresh();
+	void syncTeleToggle();
 }
 
 stopBtn.addEventListener("click", async () => {
@@ -277,39 +205,11 @@ stopBtn.addEventListener("click", async () => {
 	await refresh();
 });
 
-presentBtn.addEventListener("click", () => setPresent(!presenting));
-function setScrollPaused(on: boolean) {
-	scrollPaused = on;
-	pauseScroll.textContent = scrollPaused ? "Resume" : "Pause";
-	pauseScroll.setAttribute("aria-pressed", String(scrollPaused));
-}
-pauseScroll.addEventListener("click", () => setScrollPaused(!scrollPaused));
-speed.addEventListener("input", queueTeleSave);
-fontSize.addEventListener("input", () => {
-	applyTelePrefs();
-	queueTeleSave();
-});
-teleOpacity.addEventListener("input", () => {
-	applyTelePrefs();
-	queueTeleSave();
-});
-scriptEl.addEventListener("input", queueScriptSave);
-document.addEventListener("keydown", (e) => {
-	if (!presenting) return;
-	const editing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
-	if (e.key === "Escape" || e.key === "p" || e.key === "P") {
-		e.preventDefault();
-		setPresent(false);
-		return;
-	}
-	if (editing) return;
-	if (e.key === " ") {
-		e.preventDefault();
-		setScrollPaused(!scrollPaused);
-	} else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-		e.preventDefault();
-		prompter.scrollTop += e.key === "ArrowDown" ? 72 : -72;
-	}
+teleToggle.addEventListener("click", async () => {
+	teleToggle.disabled = true;
+	await bg({ type: "tele-toggle" }).catch(() => null);
+	teleToggle.disabled = false;
+	void syncTeleToggle();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -323,7 +223,6 @@ window.addEventListener("beforeunload", (e) => {
 });
 window.addEventListener("pagehide", () => {
 	stopLoops();
-	stopScroll();
 	closeCam();
 	closeMic();
 });

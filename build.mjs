@@ -14,6 +14,7 @@ const opts = {
 		popup: "src/popup.ts",
 		setup: "src/setup.ts",
 		sidepanel: "src/sidepanel.ts",
+		teleprompter: "src/teleprompter.ts",
 		editor: "src/editor/main.ts",
 	},
 	bundle: true,

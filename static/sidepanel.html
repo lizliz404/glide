@@ -27,26 +27,9 @@
     </div>
   </section>
 
-  <section class="sp-card" aria-label="Teleprompter">
-    <div class="sp-prompt-bar">
-      <span class="hint">Script</span>
-      <span class="spacer"></span>
-      <button id="present" type="button" class="btn small">Present</button>
-    </div>
-    <textarea id="script" rows="6" aria-label="Teleprompter script" placeholder="Paste the lines you want to read."></textarea>
-    <div id="prompter" class="sp-prompter" hidden tabindex="0" aria-label="Presenting script"></div>
-    <div id="present-controls" hidden>
-      <div class="sp-prompt-bar">
-        <label class="inline" for="speed">Speed <input id="speed" type="range" min="8" max="80" value="28" /></label>
-        <label class="inline" for="fs">Size <input id="fs" type="range" min="12" max="48" value="22" /></label>
-      </div>
-      <div class="sp-prompt-bar">
-        <label class="inline" for="tele-opacity">Opacity <input id="tele-opacity" type="range" min="30" max="100" value="100" /></label>
-        <button id="pause-scroll" type="button" class="btn small ghost" aria-pressed="false">Pause</button>
-      </div>
-      <p class="hint sp-keys">Space scroll/pause · ↑↓ nudge</p>
-    </div>
-  </section>
+  <div class="sp-prompt-bar">
+    <button id="tele-toggle" type="button" class="btn ghost wide">Teleprompter</button>
+  </div>
 
   <p id="capture-hint" class="hint" hidden>This panel is inside a window or screen capture. Move it to another window or monitor, or record a single tab, to keep it out of frame.</p>
   <button id="stop" type="button" class="btn danger wide" hidden>Stop and edit</button>

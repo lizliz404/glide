@@ -107,6 +107,42 @@ chrome.windows.onFocusChanged.addListener((id) => {
 	pushFocusedWindow();
 });
 
+// Floating teleprompter window lifecycle. The window id is kept in memory and
+// re-checked against chrome.windows.get on every toggle (SW restarts are fine).
+let teleWindowId: number | null = null;
+
+async function teleWindowExists() {
+	if (teleWindowId == null) return false;
+	const win = await chrome.windows.get(teleWindowId).catch(() => null);
+	if (!win) teleWindowId = null;
+	return win != null;
+}
+
+async function toggleTeleWindow(): Promise<boolean> {
+	if (await teleWindowExists()) {
+		await chrome.windows.remove(teleWindowId!).catch(() => {});
+		teleWindowId = null;
+		return false;
+	}
+	const { glideTeleBounds } = await chrome.storage.local.get("glideTeleBounds");
+	const b = (glideTeleBounds ?? {}) as { left?: number; top?: number; width?: number; height?: number };
+	const win = await chrome.windows.create({
+		url: chrome.runtime.getURL("teleprompter.html"),
+		type: "popup",
+		width: b.width ?? 560,
+		height: b.height ?? 300,
+		left: b.left,
+		top: b.top,
+		focused: true,
+	});
+	teleWindowId = win?.id ?? null;
+	return teleWindowId != null;
+}
+
+chrome.windows.onRemoved.addListener((id) => {
+	if (id === teleWindowId) teleWindowId = null;
+});
+
 async function refreshFocusedWindow() {
 	// Normal windows only: devtools/popup windows must not become the pointer scope.
 	const w = await chrome.windows.getLastFocused({ windowTypes: ["normal"] }).catch(() => null);
@@ -257,6 +293,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 				reply(off?.recording ? off : (page ?? off ?? { recording: false }));
 				break;
 			}
+			case "tele-toggle":
+				reply({ open: await toggleTeleWindow() });
+				break;
+			case "tele-state":
+				reply({ open: await teleWindowExists() });
+				break;
 			case "saved": {
 				if (handled.has(msg.id)) return reply({ ok: true });
 				handled.add(msg.id);
