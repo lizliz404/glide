@@ -78,6 +78,12 @@ try {
 	await page.click('#zoom-depth [data-value="4"]');
 	const edited = await regions();
 	assert.equal(edited[0].depth, 4);
+	// Undo/redo: Ctrl+Z restores the previous depth, Ctrl+Shift+Z brings the edit back.
+	await page.keyboard.down("Control"); await page.keyboard.press("z"); await page.keyboard.up("Control");
+	assert.equal((await regions())[0].depth, 3, "Ctrl+Z undoes the depth change");
+	await page.keyboard.down("Control"); await page.keyboard.down("Shift"); await page.keyboard.press("z");
+	await page.keyboard.up("Shift"); await page.keyboard.up("Control");
+	assert.equal((await regions())[0].depth, 4, "Ctrl+Shift+Z redoes it");
 	await page.reload();
 	await ready();
 	assert.deepEqual(await regions(), edited, "an immediate reload preserves depth and all region fields");
@@ -86,6 +92,14 @@ try {
 	await page.reload();
 	await ready();
 	assert.deepEqual(await regions(), [], "empty edits stay empty, not re-suggested");
+	// Clicking an empty spot on the zoom row adds a zoom there (Screen Studio / Cap).
+	const row = await page.$eval("#zoom-track", (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+	await page.mouse.click(row.x, row.y);
+	const added = await regions();
+	assert.equal(added.length, 1, "click on the zoom row adds one zoom");
+	assert.ok(Math.abs(added[0].startMs - 6000) < 300, `zoom starts at the click: ${added[0].startMs}`);
+	await page.keyboard.down("Control"); await page.keyboard.press("z"); await page.keyboard.up("Control");
+	assert.deepEqual(await regions(), [], "undo removes the added zoom");
 	await page.goto(`${base}?id=persist-b`);
 	await ready();
 	assert.equal((await regions()).length, 3, "recording B does not inherit recording A's deletions");
@@ -205,8 +219,9 @@ try {
 	await page.goto(`${base}?id=does-not-exist`);
 	await page.waitForSelector("#empty:not([hidden])", { timeout: 10000 });
 	assert.equal(await page.$eval("#empty", (el) => el.getAttribute("role")), "alert");
-	const emptyText = await page.$eval("#empty p", (el) => el.textContent);
-	assert.ok(/does-not-exist/.test(emptyText) && /Open files/.test(emptyText), `recovery copy: ${emptyText}`);
+	const emptyText = await page.$eval("#empty", (el) => el.textContent);
+	assert.ok(/not found/.test(emptyText) && /Open video/.test(emptyText), `recovery copy: ${emptyText}`);
+	assert.ok(/does-not-exist/.test(await page.$eval("#status", (el) => el.textContent)), "status names the missing id");
 	assert.equal(await page.$eval("#export-mp4", (el) => el.disabled), true, "no export without media");
 	assert.equal(await page.$eval("#export-webm", (el) => el.disabled), true);
 	assert.equal(await page.$eval("#add-zoom", (el) => el.disabled), true, "no live +Zoom without media");

@@ -17,7 +17,7 @@ import {
 import { getWebcamPositionForPreset } from "../vendor/recordly/webcamOverlay";
 import { suggestZoomRegions } from "./camera";
 import { Compositor } from "./compose";
-import { preloadCursorAssets } from "./cursor";
+import { preloadCursorAssets, SMOOTHING_PRESETS, smoothingPresetOf, type SmoothingPresetId } from "./cursor";
 import { exportVideo, makeSeekable, type ExportResult } from "./export";
 import { computeFrameLayout, FRAME_DEFAULTS, WALLPAPERS } from "./frame";
 import { applyMotionPreset, defaultSettings, loadSettings, outputSize, saveSettings, type Aspect, type GlideSettings } from "./settings";
@@ -39,6 +39,8 @@ camVid.muted = true;
 
 const POSITIONS: WebcamPositionPreset[] = ["top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"];
 const MIN_REGION_MS = 250;
+type Zoom = ZoomRegion & { disabled?: boolean };
+let tlZoom = 1;
 const NEW_REGION_MS = 1000;
 
 const state = {
@@ -100,7 +102,7 @@ const fmt = (ms: number) => {
 	return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 };
 const currentMs = () => screenVid.currentTime * 1000;
-const scene = () => ({ telemetry: state.telemetry, regions: state.regions, videoW: screenVid.videoWidth || state.meta?.width || 0, videoH: screenVid.videoHeight || state.meta?.height || 0,
+const scene = () => ({ telemetry: state.telemetry, regions: state.regions.filter((r) => !(r as Zoom).disabled), videoW: screenVid.videoWidth || state.meta?.width || 0, videoH: screenVid.videoHeight || state.meta?.height || 0,
 	crop: browserCrop(state.browserView, screenVid.videoHeight || state.meta?.height || 0, state.meta?.surface) });
 const hasCam = () => !!state.camBlob;
 
@@ -163,7 +165,15 @@ function loop() {
 		return;
 	}
 	draw(false);
-	if (!screenVid.paused) requestAnimationFrame(loop);
+	if (!screenVid.paused) scheduleFrame();
+}
+// Draw once per decoded video frame when the browser supports it (no duplicated/skipped frames from
+// rAF beating against the video clock); fall back to rAF elsewhere.
+type RVFCVideo = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number };
+function scheduleFrame() {
+	const v = screenVid as RVFCVideo;
+	if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(loop);
+	else requestAnimationFrame(loop);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -309,8 +319,8 @@ function bindControls() {
 		topPx.value = String(Math.min(state.browserView.topPx, Number(topPx.max)));
 		document.querySelector<HTMLOutputElement>('output[for="browser-top-px"]')!.value = `${topPx.value} px`;
 		$("browser-top-hint").textContent = tabCapture
-			? "This is a single-tab recording, so there is no browser chrome to hide. Record a whole browser window to keep or hide the tab strip, address bar and toolbar."
-			: "Keep or hide the recorded tab strip, address bar and toolbar. Adjust height to your browser; this also changes the preview. The source stays intact.";
+			? "Tab recordings have no browser bar to hide."
+			: "Crop the tab strip and address bar from the video. The original stays intact.";
 	};
 	const browserViewChanged = () => {
 		state.browserView = normalizeBrowserView({ hideTop: hideTop.checked, topPx: Number(topPx.value) });
@@ -336,6 +346,12 @@ function bindControls() {
 	bindings.push({ sync: () => (style.value = S().cursor.style) });
 	range("cursor-size", () => S().cursor.size, (v) => (S().cursor.size = v), (v) => `${v.toFixed(2)}×`);
 	range("cursor-smoothing", () => S().cursor.smoothing, (v) => (S().cursor.smoothing = v), (v) => v.toFixed(2));
+	radios($("cursor-smoothing-presets"), () => smoothingPresetOf(S().cursor), (v) => {
+		const p = SMOOTHING_PRESETS[v as SmoothingPresetId];
+		Object.assign(S().cursor, { smoothing: p.smoothing, spring: { ...p.spring } });
+		queueMicrotask(syncControls);
+	});
+	check("cursor-hide-idle", () => S().cursor.hideIdle, (v) => (S().cursor.hideIdle = v));
 	radios($("click-effects"), () => S().cursor.clickEffect, (v) => (S().cursor.clickEffect = v as CursorClickEffectStyle));
 	const color = $<HTMLInputElement>("click-color");
 	color.addEventListener("input", () => {
@@ -382,12 +398,7 @@ function bindControls() {
 		state.settings.cursor.show = keepCursor;
 		settingsChanged({ rebind: true });
 	});
-	const aspect = $<HTMLSelectElement>("aspect");
-	aspect.addEventListener("change", () => {
-		S().aspect = aspect.value as Aspect;
-		settingsChanged();
-	});
-	bindings.push({ sync: () => (aspect.value = S().aspect) });
+	radios($("aspect-presets"), () => S().aspect, (v) => (S().aspect = v as Aspect));
 
 	// Zoom panel
 	const depth = $("zoom-depth");
@@ -436,6 +447,35 @@ function bindControls() {
 /** The zoom panel has no rail tab, so when it is open the rail still needs one tabbable
  *  tab — keep the last real section's tab reachable or keyboard users are stuck. */
 let lastTabSection = "scene";
+/** Screen Studio-style collapsible groups: each panel h2 becomes a toggle for the controls below it. */
+function makeCollapsible() {
+	const KEY = "glide.collapsed";
+	const DEFAULT_CLOSED = ["Webcam"];
+	let closed: string[] = DEFAULT_CLOSED;
+	try { closed = JSON.parse(localStorage.getItem(KEY) ?? "null") ?? DEFAULT_CLOSED; } catch { /* default */ }
+	for (const h of document.querySelectorAll<HTMLHeadingElement>("#panel-scene > h2, #panel-settings > h2")) {
+		const name = h.textContent!.trim();
+		const body = document.createElement("div");
+		body.className = "group-body";
+		body.id = `group-${name.toLowerCase().replace(/\W+/g, "-")}`;
+		while (h.nextSibling && !(h.nextSibling instanceof HTMLHeadingElement)) body.append(h.nextSibling);
+		h.after(body);
+		const btn = document.createElement("button");
+		btn.type = "button";
+		btn.className = "group-toggle";
+		btn.setAttribute("aria-controls", body.id);
+		btn.textContent = name;
+		h.replaceChildren(btn);
+		const set = (open: boolean) => { btn.setAttribute("aria-expanded", String(open)); body.hidden = !open; };
+		set(!closed.includes(name));
+		btn.addEventListener("click", () => {
+			const open = btn.getAttribute("aria-expanded") !== "true";
+			set(open);
+			closed = open ? closed.filter((n) => n !== name) : [...closed, name];
+			localStorage.setItem(KEY, JSON.stringify(closed));
+		});
+	}
+}
 
 function showSection(id: string) {
 	state.section = id;
@@ -452,7 +492,22 @@ function showSection(id: string) {
 // ------------------------------------------------------------------------------------------------
 // Zoom regions + timeline
 
+// Undo/redo (Screen Studio, Cap): every committed edit goes through saveProject, so history is a
+// stack of the edit snapshots it saw. A drag commits once, on pointer up.
+type Edit = string;
+const editOf = (): Edit => JSON.stringify({ regions: state.regions, trim: state.trim, browserView: state.browserView });
+let lastEdit: Edit = editOf();
+const undoStack: Edit[] = [];
+const redoStack: Edit[] = [];
+
 function saveProject() {
+	const now = editOf();
+	if (now !== lastEdit) {
+		undoStack.push(lastEdit);
+		if (undoStack.length > 100) undoStack.shift();
+		redoStack.length = 0;
+		lastEdit = now;
+	}
 	if (!state.projectId) return;
 	const ok = saveProjectZooms(state.projectId, state.durationMs, state.regions, undefined, state.trim, state.browserView);
 	saveWarning = ok ? "" : "Edits could not be saved. Keep this tab open to avoid losing them.";
@@ -460,6 +515,22 @@ function saveProject() {
 		clearTimeout(tempTimer);
 		status(stickyStatus);
 	}
+}
+
+function stepHistory(from: Edit[], to: Edit[]) {
+	const prev = from.pop();
+	if (prev === undefined) return status("Nothing to " + (from === undoStack ? "undo" : "redo"));
+	to.push(lastEdit);
+	lastEdit = prev;
+	const e = JSON.parse(prev);
+	state.regions = e.regions;
+	state.trim = e.trim;
+	state.browserView = e.browserView;
+	if (!state.regions.some((r) => r.id === state.selectedId)) state.selectedId = null;
+	regionsChanged();
+	syncControls();
+	comp.reset();
+	if (currentMs() < state.trim.startMs || currentMs() > state.trim.endMs) seekTo(state.trim.startMs);
 }
 
 function regionsChanged() {
@@ -550,7 +621,7 @@ function drawTimeline() {
 	track.replaceChildren();
 	for (const r of state.regions) {
 		const b = document.createElement("div");
-		b.className = "zoom-block";
+		b.className = "zoom-block" + ((r as Zoom).disabled ? " disabled" : "");
 		b.dataset.id = r.id;
 		b.setAttribute("role", "button");
 		b.tabIndex = 0;
@@ -606,7 +677,7 @@ function syncTrimControls() {
 /** File/export actions and trim affordances follow loaded media and the export lock. */
 function syncActions() {
 	const hasMedia = !!state.screenBlob;
-	for (const id of ["export-mp4", "export-webm"]) $<HTMLButtonElement>(id).disabled = !hasMedia || exporting;
+	for (const id of ["export-mp4", "export-webm", "export-resolution", "export-quality"]) $<HTMLButtonElement>(id).disabled = !hasMedia || exporting;
 	for (const id of ["add-zoom", "suggest-zooms", "play"]) $<HTMLButtonElement>(id).disabled = !hasMedia;
 	$<HTMLInputElement>("open-files").disabled = exporting;
 	for (const id of ["open-files-btn", "empty-open"]) $<HTMLButtonElement>(id).disabled = exporting;
@@ -656,6 +727,8 @@ function seekTo(ms: number) {
 	updatePlayhead(t * 1000);
 }
 
+const closeMenu = () => { $("zoom-menu").hidden = true; };
+
 function bindTimeline() {
 	const tl = $("timeline");
 	const msAt = (clientX: number) => {
@@ -663,7 +736,8 @@ function bindTimeline() {
 		return ((clientX - r.left) / r.width) * state.durationMs;
 	};
 	tl.addEventListener("pointerdown", (e) => {
-		if (!state.durationMs || exporting) return;
+		if (!state.durationMs || exporting || e.button !== 0) return;
+		closeMenu();
 		const block = (e.target as HTMLElement).closest<HTMLElement>(".zoom-block");
 		tl.setPointerCapture(e.pointerId);
 		if (block) {
@@ -695,6 +769,8 @@ function bindTimeline() {
 			return;
 		}
 		seekTo(msAt(e.clientX));
+		// Screen Studio / Cap: clicking an empty spot on the zoom row adds a zoom there.
+		if ((e.target as HTMLElement).id === "zoom-track") return addZoomAtPlayhead();
 		const move = (ev: PointerEvent) => seekTo(msAt(ev.clientX));
 		tl.addEventListener("pointermove", move);
 		tl.addEventListener("pointerup", () => tl.removeEventListener("pointermove", move), { once: true });
@@ -713,6 +789,39 @@ function bindTimeline() {
 			seekTo(currentMs() + delta);
 		}
 	});
+	// Ctrl/Cmd + scroll zooms the timeline around the pointer; plain scroll pans it.
+	const scroller = $("timeline-scroll");
+	scroller.addEventListener("wheel", (e) => {
+		if (!e.ctrlKey && !e.metaKey) return;
+		e.preventDefault();
+		const box = scroller.getBoundingClientRect();
+		const frac = (e.clientX - box.left + scroller.scrollLeft) / tl.offsetWidth;
+		tlZoom = Math.max(1, Math.min(20, tlZoom * Math.exp(-e.deltaY / 300)));
+		tl.style.width = `${tlZoom * 100}%`;
+		scroller.scrollLeft = frac * tl.offsetWidth - (e.clientX - box.left);
+		drawTimeline();
+	}, { passive: false });
+	// Right-click a zoom block: disable or remove it.
+	const menu = $("zoom-menu");
+	tl.addEventListener("contextmenu", (e) => {
+		const block = (e.target as HTMLElement).closest<HTMLElement>(".zoom-block");
+		if (!block) return;
+		e.preventDefault();
+		selectRegion(block.dataset.id!);
+		const r = state.regions.find((x) => x.id === block.dataset.id) as Zoom;
+		$("zoom-menu-toggle").textContent = r.disabled ? "Enable zoom" : "Disable zoom";
+		menu.style.left = `${e.clientX}px`;
+		menu.style.top = `${e.clientY}px`;
+		menu.hidden = false;
+		$<HTMLButtonElement>("zoom-menu-toggle").focus();
+	});
+	$("zoom-menu-toggle").addEventListener("click", () => {
+		const r = state.regions.find((x) => x.id === state.selectedId) as Zoom | undefined;
+		if (r) { r.disabled = !r.disabled || undefined; regionsChanged(); }
+		closeMenu();
+	});
+	$("zoom-menu-remove").addEventListener("click", () => { deleteSelected(); closeMenu(); });
+	document.addEventListener("pointerdown", (e) => { if (!menu.contains(e.target as Node)) closeMenu(); });
 	$("add-zoom").addEventListener("click", addZoomAtPlayhead);
 	$("suggest-zooms").addEventListener("click", runSuggestions);
 	$("trim-start").addEventListener("click", () => changeTrim(setTrimEdge(state.trim, "start", currentMs(), state.durationMs)));
@@ -802,7 +911,7 @@ function bindTransport() {
 			if (screenVid.ended || currentMs() < state.trim.startMs || currentMs() >= state.trim.endMs - 30) seekTo(state.trim.startMs);
 			void screenVid.play();
 			if (hasCam()) void camVid.play();
-			requestAnimationFrame(loop);
+			scheduleFrame();
 		} else {
 			screenVid.pause();
 			camVid.pause();
@@ -846,6 +955,11 @@ function bindTransport() {
 			e.preventDefault();
 			const delta = e.key === "Home" ? -state.durationMs : e.key === "End" ? state.durationMs : (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 5000 : 1000);
 			seekTo(currentMs() + delta);
+		} else if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z" || e.key === "y")) {
+			if (!state.screenBlob) return;
+			e.preventDefault();
+			if (e.key === "y" || e.shiftKey) stepHistory(redoStack, undoStack);
+			else stepHistory(undoStack, redoStack);
 		} else if ((e.key === "z" || e.key === "Z") && !e.ctrlKey && !e.metaKey && !e.altKey) {
 			if (!state.screenBlob) return;
 			e.preventDefault();
@@ -853,7 +967,7 @@ function bindTransport() {
 		} else if ((e.key === "Delete" || e.key === "Backspace") && state.selectedId) {
 			e.preventDefault();
 			deleteSelected();
-		} else if (e.key === "Escape") selectRegion(null, false);
+		} else if (e.key === "Escape") { closeMenu(); selectRegion(null, false); }
 	});
 
 	// The visible button forwards to the hidden file input; same for the empty-state CTA.
@@ -887,7 +1001,7 @@ function bindTransport() {
 			await loadBundle({ id: "local", createdAt: Date.now(), startedAt: 0, durationMs: 0, surface: "browser", width: 0, height: 0, hasCamera: !!cam, hasMic: false, ...ev.meta }, screen, cam, ev.events ?? []);
 		} catch (err) {
 			const why = err instanceof Error ? err.message : "Could not read that file";
-			showEmptyState(`${why}. Try another video, or record again from the Glide toolbar button.`);
+			showEmptyState("Couldn't open this file", `${why}. Try another video, or record again from the Glide toolbar button.`);
 			status(why);
 			syncActions();
 		}
@@ -921,7 +1035,8 @@ function bindTransport() {
 			}, ctrl.signal);
 			const a = document.createElement("a");
 			a.href = URL.createObjectURL(res.blob);
-			a.download = `glide-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.${container}`;
+			const d = new Date(), p = (n: number) => String(n).padStart(2, "0");
+			a.download = `Glide ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}-${p(d.getMinutes())}.${container}`;
 			a.click();
 			status(`Exported ${res.width}×${res.height} ${container.toUpperCase()} (${res.videoCodec}${res.audioCodec ? ` + ${res.audioCodec}` : ""}, ${(res.blob.size / 1e6).toFixed(1)} MB) in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
 		} catch (err) {
@@ -954,8 +1069,26 @@ function exportFailure(err: unknown): string {
 	return `Export failed: ${raw || "something went wrong"}. Try again, or export the other format.`;
 }
 
+type ExportPrefs = { resolution: 720 | 1080 | 2160; quality: "standard" | "high" };
+const EXPORT_KEY = "glide.export";
+function exportPrefs(): ExportPrefs {
+	const resolution = Number($<HTMLSelectElement>("export-resolution").value) as ExportPrefs["resolution"];
+	const quality = $<HTMLSelectElement>("export-quality").value as ExportPrefs["quality"];
+	return { resolution, quality };
+}
+function bindExportPrefs() {
+	try {
+		const p = JSON.parse(localStorage.getItem(EXPORT_KEY) ?? "null") as ExportPrefs | null;
+		if (p && [720, 1080, 2160].includes(p.resolution)) $<HTMLSelectElement>("export-resolution").value = String(p.resolution);
+		if (p && (p.quality === "standard" || p.quality === "high")) $<HTMLSelectElement>("export-quality").value = p.quality;
+	} catch { /* defaults */ }
+	for (const id of ["export-resolution", "export-quality"]) $(id).addEventListener("change", () => localStorage.setItem(EXPORT_KEY, JSON.stringify(exportPrefs())));
+}
+
 function runExport(container: "mp4" | "webm", onProgress?: (p: number) => void, signal?: AbortSignal): Promise<ExportResult> {
+	// resolution/quality are read by the export backend on rec-hardening; cast until that merges.
 	return exportVideo({
+		...exportPrefs(),
 		container,
 		fps: 30,
 		screen: state.screenBlob!,
@@ -967,7 +1100,7 @@ function runExport(container: "mp4" | "webm", onProgress?: (p: number) => void, 
 		trim: structuredClone(state.trim),
 		onProgress,
 		signal,
-	});
+	} as Parameters<typeof exportVideo>[0]);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -1018,6 +1151,8 @@ async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, e
 	state.projectId = projectId;
 	if (savedZooms === null && state.settings.autoApplyZooms) runSuggestions();
 	else regionsChanged();
+	lastEdit = editOf();
+	undoStack.length = redoStack.length = 0;
 	settingsChanged({ rebind: true });
 	await preloadCursorAssets().catch(() => {});
 	if (generation !== loadGeneration) return;
@@ -1030,6 +1165,8 @@ async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, e
 }
 
 async function init() {
+	makeCollapsible();
+	bindExportPrefs();
 	bindControls();
 	syncActions();
 	ensureBackgroundImage();
@@ -1059,19 +1196,19 @@ async function init() {
 	} catch (e) {
 		const message = String(e).replace(/^Error:\s*/, "");
 		status(message);
-		showEmptyState(`${message}. It was deleted or isn't on this device — import a video with Open files, or record again from the Glide toolbar button.`);
+		showEmptyState("Recording not found", "It was deleted or isn't on this device. Open a video, or record again from the Glide toolbar button.");
 		draw(true);
 		syncActions();
 	}
 }
 
 /** Visible recovery card. Text only: ids can come from the URL. */
-function showEmptyState(message: string) {
+function showEmptyState(title: string, message: string) {
 	const empty = $("empty");
 	empty.hidden = false;
 	empty.setAttribute("role", "alert");
-	$("empty-title").textContent = "Couldn't open this recording";
-	empty.querySelector("p")!.textContent = message;
+	$("empty-title").textContent = title;
+	$("empty-msg").textContent = message;
 }
 
 // Test hook (used by test/e2e.mjs).

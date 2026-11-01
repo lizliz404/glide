@@ -24,12 +24,17 @@ export interface GlideSettings {
 
 const clone = <T>(v: T): T => structuredClone(v);
 
+/** Screen Studio-like camera: ~0.7 s ease in, a slightly quicker ease out, a touch more damping so
+ * auto zooms settle without overshoot. Recordly's Focused (200 ms) read as a jump cut. */
+export const GLIDE_FOCUSED_ZOOM = { zoomInDurationMs: 700, zoomOutDurationMs: 600 };
+export const GLIDE_CAMERA_SPRING = { stiffnessMultiplier: 0.9, dampingMultiplier: 1.25, massMultiplier: 1.12 };
+
 export function defaultSettings(): GlideSettings {
 	return {
 		aspect: "16:9",
 		motionPreset: "focused",
 		autoApplyZooms: true,
-		zoom: clone(ZOOM_DEFAULTS),
+		zoom: { ...clone(ZOOM_DEFAULTS), ...GLIDE_FOCUSED_ZOOM, cameraSpring: { ...GLIDE_CAMERA_SPRING } },
 		frame: clone(FRAME_DEFAULTS),
 		webcam: clone(WEBCAM_DEFAULTS),
 		cursor: clone(CURSOR_DEFAULTS),
@@ -43,6 +48,7 @@ export function applyMotionPreset(s: GlideSettings, id: CursorMotionPresetId): v
 	s.zoom.zoomSmoothness = p.zoomSmoothness;
 	s.zoom.zoomInDurationMs = p.zoomInDurationMs;
 	s.zoom.zoomOutDurationMs = p.zoomOutDurationMs;
+	if (id === "focused") Object.assign(s.zoom, GLIDE_FOCUSED_ZOOM);
 	s.cursor.size = p.cursorSize;
 	s.cursor.smoothing = p.cursorSmoothing;
 	s.cursor.spring = {

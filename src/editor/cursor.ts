@@ -35,6 +35,9 @@ export interface CursorConfig {
 	clickBounce: number;
 	clickBounceDuration: number;
 	sway: number;
+	/** Cap "Hide when idle": fade the cursor out after it rests this long. */
+	hideIdle: boolean;
+	idleMs: number;
 }
 
 const FOCUSED = CURSOR_MOTION_PRESETS.focused;
@@ -62,7 +65,33 @@ export const CURSOR_DEFAULTS: CursorConfig = {
 	clickBounce: FOCUSED.cursorClickBounce, // 2
 	clickBounceDuration: FOCUSED.cursorClickBounceDuration, // 350
 	sway: DEFAULT_CURSOR_SWAY, // 0.4
+	hideIdle: false,
+	idleMs: 2000,
 };
+
+export type SmoothingPresetId = "slow" | "smooth" | "mellow" | "fast";
+/** Cap's cursor movement presets, mapped onto Recordly's smoothing factor + spring multipliers. */
+export const SMOOTHING_PRESETS: Record<SmoothingPresetId, { label: string; smoothing: number; spring: CursorSpringTuning }> = {
+	slow: { label: "Slow", smoothing: 1.3, spring: { stiffnessMultiplier: 0.6, dampingMultiplier: 1.3, massMultiplier: 1.8 } },
+	smooth: { label: "Smooth", smoothing: 0.67, spring: { stiffnessMultiplier: 1.35, dampingMultiplier: 0.79, massMultiplier: 1.29 } },
+	mellow: { label: "Mellow", smoothing: 0.95, spring: { stiffnessMultiplier: 0.9, dampingMultiplier: 1.1, massMultiplier: 1.5 } },
+	fast: { label: "Fast", smoothing: 0.3, spring: { stiffnessMultiplier: 1.9, dampingMultiplier: 0.9, massMultiplier: 0.8 } },
+};
+export function smoothingPresetOf(cfg: Pick<CursorConfig, "smoothing">): SmoothingPresetId | "" {
+	return (Object.keys(SMOOTHING_PRESETS) as SmoothingPresetId[]).find((k) => Math.abs(SMOOTHING_PRESETS[k].smoothing - cfg.smoothing) < 1e-6) ?? "";
+}
+
+/** 1 while moving; fades to 0 over 300 ms once the pointer has rested idleMs. */
+export function idleAlpha(telemetry: CursorTelemetryPoint[], timeMs: number, idleMs: number): number {
+	let lo = 0, hi = telemetry.length - 1, i = -1;
+	while (lo <= hi) { const m = (lo + hi) >> 1; if (telemetry[m].timeMs <= timeMs) { i = m; lo = m + 1; } else hi = m - 1; }
+	if (i < 0) return 1;
+	const p = telemetry[i];
+	let k = i;
+	while (k > 0 && telemetry[k - 1].cx === p.cx && telemetry[k - 1].cy === p.cy && telemetry[k].interactionType !== "click") k--;
+	const rest = timeMs - telemetry[k].timeMs;
+	return Math.max(0, Math.min(1, 1 - (rest - idleMs) / 300));
+}
 
 /** Loads and rasterizes every cursor set once. Await before export; preview draws once ready. */
 export function preloadCursorAssets(): Promise<void> {
@@ -129,7 +158,11 @@ export class CursorLayer {
 			}
 			return;
 		}
-		this.overlay.update(ctx, telemetry, timeMs, viewport, this.cfg.show, false);
+		const a = this.cfg.hideIdle ? idleAlpha(telemetry, timeMs, this.cfg.idleMs) : 1;
+		ctx.save();
+		ctx.globalAlpha *= a;
+		this.overlay.update(ctx, telemetry, timeMs, viewport, this.cfg.show && a > 0, false);
+		ctx.restore();
 	}
 
 	/** Test/debug hook: current smoothed position (0–1 in the viewport) and sway (radians). */
