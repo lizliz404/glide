@@ -25,6 +25,13 @@ interface Session {
 	height: number;
 	opts: RecordOptions;
 	stopping: Promise<string> | null;
+	/** Wall-clock [from, to) ranges spent paused; `to` is 0 while still paused. */
+	pauses: [number, number][];
+}
+
+/** Wall-clock ms spent paused before `t`, so recorded time is continuous across pauses. */
+function pausedBefore(s: Session, t: number) {
+	return s.pauses.reduce((sum, [a, b]) => sum + Math.max(0, Math.min(t, b || t) - a), 0);
 }
 let session: Session | null = null;
 
@@ -42,7 +49,7 @@ function metaOf(s: Session): RecordingMeta {
 		id: s.id,
 		createdAt: startedAt,
 		startedAt,
-		durationMs: Date.now() - startedAt,
+		durationMs: Date.now() - startedAt - pausedBefore(s, Date.now()),
 		surface: s.surface,
 		width: s.width,
 		height: s.height,
@@ -130,6 +137,7 @@ async function start(
 			height: settings.height ?? 0,
 			opts,
 			stopping: null,
+			pauses: [],
 		};
 		// Every second's chunk goes straight to IndexedDB (as Screenity does), so memory stays flat on
 		// long takes and a crashed or closed recorder still leaves a recoverable recording.
@@ -162,6 +170,17 @@ async function start(
 	}
 }
 
+function setPaused(on: boolean) {
+	const s = session;
+	if (!s || s.stopping) return { ok: false, error: "Not recording" };
+	const paused = s.pauses.at(-1)?.[1] === 0;
+	if (on === paused) return { ok: true, paused };
+	for (const r of [s.screenRec, s.camRec]) if (r) on ? r.pause() : r.resume();
+	if (on) s.pauses.push([Date.now(), 0]);
+	else s.pauses.at(-1)![1] = Date.now();
+	return { ok: true, paused: on };
+}
+
 function stopRecorder(r: MediaRecorder | null) {
 	return new Promise<void>((resolve) => {
 		if (!r || r.state === "inactive") return resolve();
@@ -175,6 +194,7 @@ function stop(): Promise<string> {
 	if (!s) return Promise.resolve("");
 	if (s.stopping) return s.stopping;
 	s.stopping = (async () => {
+		if (s.pauses.at(-1)?.[1] === 0) s.pauses.at(-1)![1] = Date.now();
 		await Promise.all([stopRecorder(s.screenRec), stopRecorder(s.camRec)]);
 		for (const st of s.streams) for (const t of st.getTracks()) t.stop();
 		await Promise.race([s.audioCtx?.close(), new Promise((r) => setTimeout(r, 1000))]);
@@ -182,7 +202,7 @@ function stop(): Promise<string> {
 		await s.writes;
 		const id = await finishChunks(
 			s.id,
-			s.events.filter((e) => e.t >= s.startedAt).map((e) => ({ ...e, t: e.t - s.startedAt })),
+			s.events.filter((e) => e.t >= s.startedAt).map((e) => ({ ...e, t: e.t - s.startedAt - pausedBefore(s, e.t) })),
 			meta,
 		);
 		session = null;
@@ -205,7 +225,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 		// Only events provably from the recorded surface become zoom/cursor data. `sender` is
 		// Chrome's message metadata, so a page cannot claim another tab's identity.
 		if (!acceptsPointerSender(UNKNOWN_SOURCE, sender?.tab)) return;
-		session?.events.push(msg.evt as PointerEvt);
+		// Movement while paused is not in the video, so it is not kept either.
+		if (session && session.pauses.at(-1)?.[1] !== 0) session.events.push(msg.evt as PointerEvt);
 		return;
 	}
 	if (isPage && msg.type === "start") return; // page mode starts from its own button
@@ -213,8 +234,9 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 		if (msg.type === "start") reply(await start(msg.opts));
 		else if (msg.type === "stop")
 			reply(await stop().then((id) => ({ ok: true, id }), (e: Error) => ({ ok: false, error: e.message })));
+		else if (msg.type === "pause" || msg.type === "resume") reply(setPaused(msg.type === "pause"));
 		else if (msg.type === "status")
-			reply({ recording: !!session, since: session?.startedAt ?? 0, events: session?.events.length ?? 0, error: session?.writeError ?? null });
+			reply({ recording: !!session, since: session?.startedAt ?? 0, events: session?.events.length ?? 0, paused: session?.pauses.at(-1)?.[1] === 0, error: session?.writeError ?? null });
 	})();
 	return true;
 });

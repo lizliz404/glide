@@ -32,7 +32,6 @@ const browser = await puppeteer.launch({
 	headless: process.env.HEADFUL ? false : true,
 	enableExtensions: true,
 	pipe: true,
-	dumpio: !!process.env.DUMPIO,
 	// No `--auto-accept-this-tab-capture` in page mode: it makes Chrome capture the recorder tab
 	// itself, which is how this test used to pass while recording the wrong surface (P2-9). Headless
 	// Chrome cannot be told which tab to share by title, so the offscreen path (no user gesture)
@@ -134,6 +133,16 @@ try {
 		await checkPopup.waitForSelector("#stop:not([hidden])");
 		await checkPopup.close();
 	}
+	// Pause/resume: the paused gap must be cut from both the video and the metadata.
+	const pauseMs = 2000;
+	const paused = await ctl.evaluate(() => chrome.runtime.sendMessage({ target: "background", type: "pause" }));
+	const pausedStatus = await ctl.evaluate(() => chrome.runtime.sendMessage({ target: "background", type: "status" }));
+	if (!paused?.paused || !pausedStatus?.paused) throw new Error(`pause not reported: ${JSON.stringify({ paused, pausedStatus })}`);
+	await new Promise((r) => setTimeout(r, pauseMs));
+	const resumed = await ctl.evaluate(() => chrome.runtime.sendMessage({ target: "background", type: "resume" }));
+	if (!resumed?.ok || resumed.paused) throw new Error(`resume failed: ${JSON.stringify(resumed)}`);
+	await new Promise((r) => setTimeout(r, 500));
+	const wallMs = Date.now() - status.since;
 	const stop = await ctl.evaluate(() => chrome.runtime.sendMessage({ target: "background", type: "stop" }));
 	console.log("stop:", JSON.stringify(stop));
 	const edTarget = await editorOpened;
@@ -183,6 +192,10 @@ try {
 		URL.revokeObjectURL(url);
 		return out;
 	});
+	const metaMs = await ed.evaluate((id) => glide.state.meta?.durationMs ?? null, stop.id);
+	console.log("pause:", JSON.stringify({ wallMs, metaMs, videoMs: frames.durationMs }));
+	if (metaMs != null && wallMs - metaMs < pauseMs - 300) throw new Error("durationMs still includes the pause");
+	if (wallMs - frames.durationMs < pauseMs - 500) throw new Error("video still includes the pause");
 	console.log("recorded frames:", JSON.stringify(frames));
 	if (!frames.size[0] || !frames.size[1]) throw new Error(`recorded video has no frames: ${JSON.stringify(frames)}`);
 	const onTarget = frames.samples.filter(([r, g, b]) => r > 60 && b > 140 && g < 100).length;

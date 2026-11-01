@@ -4,6 +4,8 @@ import type { RecordOptions, Surface } from "./shared/types";
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const startBtn = $<HTMLButtonElement>("start");
 const stopBtn = $<HTMLButtonElement>("stop");
+const pauseBtn = $<HTMLButtonElement>("pause");
+let paused = false;
 const status = $<HTMLElement>("status");
 const mic = $<HTMLInputElement>("mic");
 const camera = $<HTMLInputElement>("camera");
@@ -41,8 +43,8 @@ async function restore() {
 		if (glideOpts.surface) surface.value = glideOpts.surface;
 	}
 	syncSurfaceNote();
-	const st = await bg<{ recording: boolean; since: number; events: number; error?: string | null }>({ type: "status" });
-	setRecording(!!st?.recording, st?.since);
+	const st = await bg<{ recording: boolean; since: number; events: number; paused?: boolean; error?: string | null }>({ type: "status" });
+	setRecording(!!st?.recording, st?.since, !!st?.paused);
 	if (st?.error) status.textContent = st.error;
 	// A recorder that closed or crashed mid-take left its chunks behind; turn them into a recording.
 	const recovered = st?.recording ? [] : await recoverOrphans().catch(() => []);
@@ -61,11 +63,14 @@ async function restore() {
 	$("recent-wrap").hidden = recent.length === 0;
 }
 
-function setRecording(on: boolean, since = 0) {
+function setRecording(on: boolean, since = 0, isPaused = false) {
+	paused = isPaused;
 	startBtn.hidden = on;
 	stopBtn.hidden = !on;
+	pauseBtn.hidden = !on;
+	pauseBtn.textContent = paused ? "Resume" : "Pause";
 	for (const el of [mic, camera, surface]) el.disabled = on;
-	status.textContent = on ? `Recording since ${new Date(since).toLocaleTimeString()}` : "";
+	status.textContent = !on ? "" : paused ? "Paused. The pause is cut from the video." : `Recording since ${new Date(since).toLocaleTimeString()}`;
 }
 
 async function devicePermissionsOk(opts: RecordOptions) {
@@ -117,6 +122,14 @@ startBtn.addEventListener("click", async () => {
 		return;
 	}
 	status.textContent = res?.error ?? "Could not start recording";
+});
+
+pauseBtn.addEventListener("click", async () => {
+	pauseBtn.disabled = true;
+	const res = await bg<{ ok: boolean; paused?: boolean; error?: string }>({ type: paused ? "resume" : "pause" });
+	pauseBtn.disabled = false;
+	if (res?.ok) setRecording(true, Date.now(), !!res.paused);
+	else status.textContent = res?.error ?? "Could not pause";
 });
 
 stopBtn.addEventListener("click", async () => {

@@ -64,7 +64,7 @@ async function recorderTabs() {
 	return tabs.filter((t): t is chrome.tabs.Tab => t?.id != null);
 }
 
-async function askRecorder(type: "status" | "stop") {
+async function askRecorder(type: "status" | "stop" | "pause" | "resume") {
 	const tabs = await recorderTabs();
 	const owner = tabs.find((t) => t.id === recorderOwnerId) ?? tabs[0];
 	if (owner?.id == null) {
@@ -81,9 +81,9 @@ async function focusRecorder(tabId: number) {
 	await chrome.tabs.update(tabId, { active: true });
 }
 
-async function setBadge(on: boolean) {
-	await chrome.action.setBadgeText({ text: on ? "REC" : "" });
-	if (on) await chrome.action.setBadgeBackgroundColor({ color: "#e5484d" });
+async function setBadge(on: boolean, paused = false) {
+	await chrome.action.setBadgeText({ text: on ? (paused ? "II" : "REC") : "" });
+	if (on) await chrome.action.setBadgeBackgroundColor({ color: paused ? "#8b8d98" : "#e5484d" });
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
@@ -144,6 +144,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 						? await chrome.runtime.sendMessage({ target: "recorder", type: "stop" }).catch(() => ({ ok: false, error: "Recorder closed" }))
 						: { ok: false, error: "Recorder closed" },
 				);
+				break;
+			}
+			case "pause":
+			case "resume": {
+				const res =
+					(await askRecorder(msg.type)) ??
+					(await chrome.runtime.sendMessage({ target: "recorder", type: msg.type }).catch(() => ({ ok: false, error: "Recorder closed" })));
+				if (res?.ok) await setBadge(true, res.paused);
+				reply(res);
 				break;
 			}
 			case "status": {
