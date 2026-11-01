@@ -66,7 +66,10 @@ export class Compositor {
 			style: s.frame,
 			camera,
 			crop,
-			drawCursor: s.cursor.show && projected.telemetry.length ? (c, vp) => this.cursor.draw(c, projected.telemetry, timeMs, vp) : undefined,
+			// Click effects stay live with the sprite hidden (the overlay draws them
+			// independently of `visible`): on a take with the cursor baked in they are the
+			// only overlay that adds information instead of a second pointer.
+			drawCursor: (s.cursor.show || s.cursor.clickEffect !== "none") && projected.telemetry.length ? (c, vp) => this.cursor.draw(c, projected.telemetry, timeMs, vp) : undefined,
 			drawWebcam: src.cam && s.webcam.enabled ? (c, w, h, z) => drawWebcamBubble(c, w, h, src.cam, src.camW, src.camH, s.webcam, z) : undefined,
 		});
 		return camera;

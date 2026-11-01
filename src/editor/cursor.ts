@@ -45,11 +45,10 @@ const FOCUSED = CURSOR_MOTION_PRESETS.focused;
 /** Recordly defaults: the "focused" motion preset (DEFAULT_MOTION_PRESET) on top of E/types.ts. */
 export const CURSOR_DEFAULTS: CursorConfig = {
 	show: true,
-	// "dot", not an arrow sprite: Chrome bakes the OS cursor into every capture on some
-	// platforms (Linux window/screen ignore cursor:"never"; tab capture has no such
-	// constraint), so drawing a second arrow means two pointers on screen. A dot reads
-	// as a locator highlight at the pointer, not another mouse. Users who capture on a
-	// platform that honors cursor:"never" can still pick an arrow in the Cursor panel.
+	// "dot", not an arrow sprite: the editor auto-shows this overlay only on takes with
+	// no OS cursor baked in (meta.cursorMode), so when it does draw it IS the pointer —
+	// but a manually re-enabled overlay on a baked-in take rides the native cursor, and
+	// there a second arrow would read as two mice where a dot reads as a locator accent.
 	style: "dot",
 	size: 0.6, // ~17px at export scale: a tight accent, not a mouse replacement
 	// 0 = spring stiffness 1000 → tracks the logged pointer 1:1. The baked OS cursor is

@@ -23,6 +23,7 @@ import {
 } from "mediabunny";
 import { Compositor, type SceneData } from "./compose";
 import { preloadCursorAssets } from "./cursor";
+import { backgroundToWallpaper } from "./frame";
 import { outputSize, type GlideSettings } from "./settings";
 
 export interface ExportOptions {
@@ -42,6 +43,17 @@ export interface ExportOptions {
 	trim?: { startMs: number; endMs: number };
 	onProgress?: (p: number) => void;
 	signal?: AbortSignal;
+}
+
+/** fetch -> ImageBitmap, the same decode the cursor assets use; null on any failure. */
+async function loadImageBitmap(url: string): Promise<CanvasImageSource | null> {
+	try {
+		const res = await fetch(url);
+		if (!res.ok) return null;
+		return await createImageBitmap(await res.blob());
+	} catch {
+		return null;
+	}
 }
 
 export interface ExportResult {
@@ -123,7 +135,12 @@ export async function exportVideo(o: ExportOptions): Promise<ExportResult> {
 		// Preserve the untrimmed frame count; trimmed exports cover even a partial final frame.
 		const frames = Math.max(1, o.trim ? Math.ceil(duration * o.fps - 1e-9) : Math.round(duration * o.fps));
 		const times = Array.from({ length: frames }, (_, i) => i / o.fps);
-		if (o.settings.cursor.show) await preloadCursorAssets();
+		if (o.settings.cursor.show || o.settings.cursor.clickEffect !== "none") await preloadCursorAssets();
+		// The caller hands over whatever the preview has already decoded (or null when the
+		// <img> is still loading). An export must never bake the black fallback because of
+		// that timing — resolve the wallpaper itself, matching the preview's contract.
+		const bg = o.settings.frame.background;
+		const bgImage = o.bgImage ?? (bg.kind === "image" ? await loadImageBitmap(backgroundToWallpaper(bg)) : null);
 		checkCancelled();
 		const comp = new Compositor(o.settings);
 		comp.reset();
@@ -141,7 +158,7 @@ export async function exportVideo(o: ExportOptions): Promise<ExportResult> {
 					if (s.value) lastScreen = s.value.canvas;
 					const camCanvas = c?.value?.canvas ?? null;
 					comp.draw(ctx, width, height, startMs + times[i] * 1000,
-						{ screen: lastScreen, cam: camCanvas, camW: camCanvas?.width ?? 0, camH: camCanvas?.height ?? 0, bgImage: o.bgImage },
+						{ screen: lastScreen, cam: camCanvas, camW: camCanvas?.width ?? 0, camH: camCanvas?.height ?? 0, bgImage },
 						o.scene, i === 0);
 					await vsrc.add(times[i], o.trim ? Math.min(1 / o.fps, duration - times[i]) : 1 / o.fps);
 					if (i % 10 === 0) o.onProgress?.(i / frames);

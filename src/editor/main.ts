@@ -1144,8 +1144,13 @@ async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, e
 				? Math.max(0, Math.min(4000, state.durationMs - meta.durationMs))
 				: 0;
 	state.telemetry = toTelemetry(events, surface, state.durationMs, telemetryOffsetMs);
-	// Tab capture has no OS cursor baked in; window/screen capture usually does.
-	if (!localStorage.getItem("glide.cursorTouched")) state.settings.cursor.show = surface === "browser";
+	// Show the overlay pointer only when the take provably has no OS cursor baked in —
+	// Chrome stamps the applied capture mode into meta.cursorMode at record time. On a
+	// take with the native cursor baked in, an overlay at the same spot is a second,
+	// meaningless pointer (the trailing-dot bug). Older takes without the stamp keep
+	// the surface heuristic (tab captures rarely bake a cursor; window/screen usually do).
+	if (!localStorage.getItem("glide.cursorTouched"))
+		state.settings.cursor.show = meta.cursorMode ? meta.cursorMode === "never" : surface === "browser";
 	const loaded = new Promise((r) => screenVid.addEventListener("loadeddata", r, { once: true }));
 	if (screenUrl) URL.revokeObjectURL(screenUrl);
 	if (camUrl) URL.revokeObjectURL(camUrl);

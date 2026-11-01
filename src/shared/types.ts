@@ -41,6 +41,15 @@ export interface RecordingMeta {
 	videoOriginAt?: number;
 	durationMs: number;
 	surface: Surface;
+	/**
+	 * The capture track's applied cursor mode: Chrome's getSettings().cursor for
+	 * getDisplayMedia, "never" for chrome.tabCapture (which never composites the OS
+	 * cursor). The editor draws its overlay pointer only when this is "never" — on a
+	 * take with the native cursor baked in, an overlay at the same spot is a second,
+	 * meaningless pointer. Absent on older recordings or when Chrome doesn't report it;
+	 * the editor then falls back to the surface heuristic.
+	 */
+	cursorMode?: "never" | "always" | "motion";
 	width: number;
 	height: number;
 	hasCamera: boolean;

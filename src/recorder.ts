@@ -23,6 +23,8 @@ interface Session {
 	/** Wall clock of the capture track's first frame (see RecordingMeta.videoOriginAt). */
 	videoOriginAt: number;
 	surface: Surface;
+	/** See RecordingMeta.cursorMode — captured once from the track's applied settings. */
+	cursorMode?: RecordingMeta["cursorMode"];
 	width: number;
 	height: number;
 	opts: RecordOptions;
@@ -84,6 +86,7 @@ function metaOf(s: Session): RecordingMeta {
 		videoOriginAt: s.videoOriginAt || undefined,
 		durationMs: Date.now() - startedAt - pausedBefore(s, Date.now()),
 		surface: s.surface,
+		cursorMode: s.cursorMode,
 		width: s.width,
 		height: s.height,
 		hasCamera: !!s.camRec,
@@ -131,7 +134,10 @@ async function start(
 		} as DisplayMediaStreamOptions);
 		streams.push(display);
 		const vTrack = display.getVideoTracks()[0];
-		const settings = vTrack.getSettings() as MediaTrackSettings & { displaySurface?: Surface };
+		const settings = vTrack.getSettings() as MediaTrackSettings & {
+			displaySurface?: Surface;
+			cursor?: RecordingMeta["cursorMode"];
+		};
 
 		// Wall clock of the capture's first frame = the webm's video pts 0. Everything below
 		// (mic/cam prompts, audio mixing) runs before MediaRecorder.start(), so startedAt
@@ -197,6 +203,11 @@ async function start(
 			startedAt: 0,
 			videoOriginAt,
 			surface: settings.displaySurface ?? opts.surface,
+			// The cursor the capture actually contains, not the surface it shows: chrome.tabCapture
+			// never composites the OS cursor; getDisplayMedia reports the applied mode in
+			// getSettings().cursor ("never" requested at L125, but platforms like Wayland ignore it —
+			// then Chrome reports "always" and the editor must not draw a second pointer).
+			cursorMode: opts.tabStreamId ? "never" : settings.cursor,
 			width: settings.width ?? 0,
 			height: settings.height ?? 0,
 			opts,
