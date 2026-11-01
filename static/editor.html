@@ -54,7 +54,16 @@
       </div>
       <h2>Cursor</h2>
       <label class="check"><input id="cursor-show" type="checkbox" /> Show Cursor</label>
-      <div class="segmented" role="radiogroup" aria-label="Click Effects" id="click-effects">
+      <span class="label" id="cursor-smoothing-label">Movement</span>
+      <div id="cursor-smoothing-presets" class="segmented" role="radiogroup" aria-labelledby="cursor-smoothing-label">
+        <button type="button" role="radio" data-value="slow">Slow</button>
+        <button type="button" role="radio" data-value="smooth">Smooth</button>
+        <button type="button" role="radio" data-value="mellow">Mellow</button>
+        <button type="button" role="radio" data-value="fast">Fast</button>
+      </div>
+      <label class="check"><input id="cursor-hide-idle" type="checkbox" /> Hide when idle</label>
+      <span class="label" id="click-effects-label">Click effect</span>
+      <div class="segmented" role="radiogroup" aria-labelledby="click-effects-label" id="click-effects">
         <button type="button" role="radio" data-value="none">Off</button>
         <button type="button" role="radio" data-value="ripple">Ripple</button>
         <button type="button" role="radio" data-value="spotlight" hidden>Spotlight</button>

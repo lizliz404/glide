@@ -17,7 +17,7 @@ import {
 import { getWebcamPositionForPreset } from "../vendor/recordly/webcamOverlay";
 import { suggestZoomRegions } from "./camera";
 import { Compositor } from "./compose";
-import { preloadCursorAssets } from "./cursor";
+import { preloadCursorAssets, SMOOTHING_PRESETS, smoothingPresetOf, type SmoothingPresetId } from "./cursor";
 import { exportVideo, makeSeekable, type ExportResult } from "./export";
 import { computeFrameLayout, FRAME_DEFAULTS, WALLPAPERS } from "./frame";
 import { applyMotionPreset, defaultSettings, loadSettings, outputSize, saveSettings, type Aspect, type GlideSettings } from "./settings";
@@ -282,6 +282,12 @@ function bindControls() {
 	bindings.push({ sync: () => (style.value = S().cursor.style) });
 	range("cursor-size", () => S().cursor.size, (v) => (S().cursor.size = v), (v) => `${v.toFixed(2)}×`);
 	range("cursor-smoothing", () => S().cursor.smoothing, (v) => (S().cursor.smoothing = v), (v) => v.toFixed(2));
+	radios($("cursor-smoothing-presets"), () => smoothingPresetOf(S().cursor), (v) => {
+		const p = SMOOTHING_PRESETS[v as SmoothingPresetId];
+		Object.assign(S().cursor, { smoothing: p.smoothing, spring: { ...p.spring } });
+		queueMicrotask(syncControls);
+	});
+	check("cursor-hide-idle", () => S().cursor.hideIdle, (v) => (S().cursor.hideIdle = v));
 	radios($("click-effects"), () => S().cursor.clickEffect, (v) => (S().cursor.clickEffect = v as CursorClickEffectStyle));
 	const color = $<HTMLInputElement>("click-color");
 	color.addEventListener("input", () => {

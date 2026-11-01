@@ -45,6 +45,8 @@ describe("glide cursor defaults", () => {
 			clickBounce: 2,
 			clickBounceDuration: 350,
 			sway: 0.4,
+			hideIdle: false,
+			idleMs: 2000,
 		});
 	});
 

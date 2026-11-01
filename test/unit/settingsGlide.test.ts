@@ -7,8 +7,8 @@ describe("glide defaults = Recordly defaults", () => {
 		const s = defaultSettings();
 		expect(s.aspect).toBe("16:9");
 		expect(s.motionPreset).toBe("focused");
-		expect(s.zoom).toMatchObject({ connectZooms: true, zoomInDurationMs: 200, zoomOutDurationMs: 200, zoomSmoothness: 0.5, autoZoomDepth: 3 });
-		expect(s.zoom.cameraSpring).toEqual({ stiffnessMultiplier: 1, dampingMultiplier: 1.13, massMultiplier: 1.12 });
+		expect(s.zoom).toMatchObject({ connectZooms: true, zoomInDurationMs: 700, zoomOutDurationMs: 600, zoomSmoothness: 0.5, autoZoomDepth: 3 });
+		expect(s.zoom.cameraSpring).toEqual({ stiffnessMultiplier: 0.9, dampingMultiplier: 1.25, massMultiplier: 1.12 });
 		expect(s.frame).toMatchObject({ padding: 20, borderRadius: 8, shadowIntensity: 0.67, backgroundBlur: 0 });
 		expect(s.frame.background).toEqual({ kind: "image", url: "wallpapers/tahoe-light.jpg" });
 		expect(s.webcam).toMatchObject({ sizePercent: 40, roundness: 100, shadow: 0.3, margin: 24, positionPreset: "bottom-right", mirror: true, reactToZoom: true });
