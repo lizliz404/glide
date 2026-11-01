@@ -18,6 +18,7 @@ import {
 	Mp4OutputFormat,
 	Output,
 	QUALITY_HIGH,
+	QUALITY_MEDIUM,
 	WebMOutputFormat,
 } from "mediabunny";
 import { Compositor, type SceneData } from "./compose";
@@ -33,6 +34,10 @@ export interface ExportOptions {
 	scene: SceneData;
 	settings: GlideSettings;
 	durationMs: number;
+	/** Short side of the output in px (720p, 1080p, 4K). Default 1080. */
+	resolution?: 720 | 1080 | 2160;
+	/** Encoder bitrate tier: "high" (default, Mediabunny QUALITY_HIGH) or "standard" (QUALITY_MEDIUM, ~half the size). */
+	quality?: "standard" | "high";
 	/** Source-relative interval [startMs, endMs); source/scene timestamps stay unchanged. */
 	trim?: { startMs: number; endMs: number };
 	onProgress?: (p: number) => void;
@@ -73,7 +78,8 @@ export async function exportVideo(o: ExportOptions): Promise<ExportResult> {
 	o.signal?.addEventListener("abort", stop, { once: true });
 	try {
 		checkCancelled();
-		const { width, height } = outputSize(o.settings.aspect);
+		const { width, height } = outputSize(o.settings.aspect, o.resolution ?? 1080);
+		const quality = o.quality === "standard" ? QUALITY_MEDIUM : QUALITY_HIGH;
 		const mp4 = o.container === "mp4";
 		const videoCodec = await getFirstEncodableVideoCodec(mp4 ? ["avc", "vp9", "av1"] : ["vp9", "vp8", "av1"], { width, height });
 		if (!videoCodec) throw new Error("No WebCodecs video encoder available in this browser");
@@ -105,7 +111,7 @@ export async function exportVideo(o: ExportOptions): Promise<ExportResult> {
 		const ctx = canvas.getContext("2d", { alpha: false });
 		if (!ctx) throw new Error("Failed to get export canvas context");
 		output = new Output({ format: mp4 ? new Mp4OutputFormat({ fastStart: "in-memory" }) : new WebMOutputFormat(), target: new BufferTarget() });
-		const vsrc = new CanvasSource(canvas, { codec: videoCodec, bitrate: QUALITY_HIGH, keyFrameInterval: 2 });
+		const vsrc = new CanvasSource(canvas, { codec: videoCodec, bitrate: quality, keyFrameInterval: 2 });
 		output.addVideoTrack(vsrc, { frameRate: o.fps });
 		let asrc: AudioSampleSource | null = null;
 		if (at && audioCodec && (await at.canDecode())) {
