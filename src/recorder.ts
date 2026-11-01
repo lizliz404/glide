@@ -20,6 +20,8 @@ interface Session {
 	audioCtx: AudioContext | null;
 	events: PointerEvt[];
 	startedAt: number;
+	/** Wall clock of the capture track's first frame (see RecordingMeta.videoOriginAt). */
+	videoOriginAt: number;
 	surface: Surface;
 	width: number;
 	height: number;
@@ -79,6 +81,7 @@ function metaOf(s: Session): RecordingMeta {
 		id: s.id,
 		createdAt: startedAt,
 		startedAt,
+		videoOriginAt: s.videoOriginAt || undefined,
 		durationMs: Date.now() - startedAt - pausedBefore(s, Date.now()),
 		surface: s.surface,
 		width: s.width,
@@ -130,6 +133,19 @@ async function start(
 		const vTrack = display.getVideoTracks()[0];
 		const settings = vTrack.getSettings() as MediaTrackSettings & { displaySurface?: Surface };
 
+		// Wall clock of the capture's first frame = the webm's video pts 0. Everything below
+		// (mic/cam prompts, audio mixing) runs before MediaRecorder.start(), so startedAt
+		// lands ~1s after pts 0 — the editor shifts pointer telemetry by that gap.
+		const videoOriginAt = vTrack.muted
+			? await new Promise<number>((r) => {
+					const to = setTimeout(() => r(Date.now()), 2000);
+					vTrack.addEventListener("unmute", () => {
+						clearTimeout(to);
+						r(Date.now());
+					}, { once: true });
+				})
+			: Date.now();
+
 		let mic: MediaStream | null = null;
 		if (opts.mic) {
 			mic = await navigator.mediaDevices
@@ -179,6 +195,7 @@ async function start(
 			audioCtx,
 			events: [],
 			startedAt: 0,
+			videoOriginAt,
 			surface: settings.displaySurface ?? opts.surface,
 			width: settings.width ?? 0,
 			height: settings.height ?? 0,

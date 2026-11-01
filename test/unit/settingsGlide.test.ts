@@ -24,6 +24,20 @@ describe("glide defaults = Recordly defaults", () => {
 		expect(s.cursor.spring).toEqual({ stiffnessMultiplier: p.cursorSpringStiffnessMultiplier, dampingMultiplier: p.cursorSpringDampingMultiplier, massMultiplier: p.cursorSpringMassMultiplier });
 	});
 
+	it("upgrades pre-dot cursor defaults but keeps deliberate choices", () => {
+		const mem = new Map<string, string>();
+		const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
+		const stale = defaultSettings();
+		Object.assign(stale.cursor, { style: "tahoe", size: 2.5, smoothing: 0.67, clickEffect: "ripple" });
+		saveSettings(stale, store);
+		const migrated = loadSettings(store);
+		expect(migrated.cursor).toMatchObject({ style: "dot", size: 0.6, smoothing: 0, clickEffect: "ripple" });
+		const custom = defaultSettings();
+		Object.assign(custom.cursor, { style: "macos", size: 1.4, smoothing: 0.3 });
+		saveSettings(custom, store);
+		expect(loadSettings(store).cursor).toMatchObject({ style: "macos", size: 1.4, smoothing: 0.3 });
+	});
+
 	it("round-trips through storage and never restores blob: backgrounds", () => {
 		const mem = new Map<string, string>();
 		const store = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };

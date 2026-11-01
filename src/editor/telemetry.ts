@@ -19,11 +19,15 @@ export const DOUBLE_CLICK_MAX_DISTANCE = 0.04;
 const SURFACE_KEY = { browser: "tab", window: "win", monitor: "mon" } as const satisfies Record<Surface, keyof PointerEvt>;
 
 /**
- * Convert the content script's events (ms since recording start) into Recordly telemetry,
+ * Convert the content script's events into Recordly telemetry on the video timeline,
  * normalised by Recordly's own normalizeCursorTelemetry (sort, clamp to [0,1] and [0,totalMs],
  * infer text / closed-hand cursor types around selections and drags).
+ *
+ * Event `t` is ms since MediaRecorder.onstart; the webm's pts 0 is the capture track's first
+ * frame, stamped earlier (see RecordingMeta.videoOriginAt). `offsetMs` = startedAt - videoOriginAt
+ * moves each event onto the pts axis, or the drawn cursor leads the baked one by that gap.
  */
-export function toTelemetry(events: PointerEvt[], surface: Surface, totalMs: number): CursorTelemetryPoint[] {
+export function toTelemetry(events: PointerEvt[], surface: Surface, totalMs: number, offsetMs = 0): CursorTelemetryPoint[] {
 	const key = SURFACE_KEY[surface] ?? "tab";
 	const sorted = [...events].sort((a, b) => a.t - b.t);
 	const points: CursorTelemetryPoint[] = [];
@@ -33,7 +37,7 @@ export function toTelemetry(events: PointerEvt[], surface: Surface, totalMs: num
 		const p = e[key];
 		if (!p) continue;
 		const [cx, cy] = p;
-		const timeMs = Math.max(0, e.t);
+		const timeMs = Math.max(0, e.t + offsetMs);
 		let interactionType: NonNullable<CursorTelemetryPoint["interactionType"]>;
 		switch (e.kind) {
 			case "down": {

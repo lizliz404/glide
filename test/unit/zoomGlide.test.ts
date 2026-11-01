@@ -70,6 +70,17 @@ describe("toTelemetry", () => {
 		expect(t[0]).toMatchObject({ timeMs: 900, cx: 1, cy: 0 });
 		expect(t[1].timeMs).toBe(10000);
 	});
+
+	it("shifts events onto the video pts axis by offsetMs (capture epoch vs MediaRecorder.onstart)", () => {
+		const events = [evt(100, "move", 0.1, 0.1), evt(200, "down", 0.2, 0.2), evt(300, "up", 0.2, 0.2)];
+		const t = toTelemetry(events, "browser", 10000, 1080);
+		expect(t.map((p) => p.timeMs)).toEqual([1180, 1280, 1380]);
+		// Double-click detection compares shifted times consistently (80 ms apart, still "click"+"mouseup").
+		expect(t[1].interactionType).toBe("click");
+		// Offset never produces negative times.
+		const early = toTelemetry([evt(50, "move", 0.5, 0.5)], "browser", 10000, -80);
+		expect(early[0].timeMs).toBe(0);
+	});
 });
 
 describe("suggestZoomRegions", () => {

@@ -77,6 +77,12 @@ export function loadSettings(storage: Pick<Storage, "getItem"> | null = globalTh
 			webcam: { ...d.webcam, ...saved.webcam },
 			cursor: { ...d.cursor, ...saved.cursor, spring: { ...d.cursor.spring, ...saved.cursor?.spring } },
 		};
+		// Pre-dot cursor defaults (tahoe arrow sprite ×2.5, spring 0.67) saved before the
+		// locator-dot redesign lag the baked-in cursor badly — upgrade fields still holding
+		// those exact values; deliberate custom choices are left alone.
+		if (saved.cursor?.style === "tahoe") s.cursor.style = d.cursor.style;
+		if (saved.cursor?.size === 2.5) s.cursor.size = d.cursor.size;
+		if (saved.cursor?.smoothing === 0.67) s.cursor.smoothing = d.cursor.smoothing;
 		if (s.frame.background.kind === "image" && s.frame.background.url.startsWith("blob:")) s.frame.background = d.frame.background;
 		return s;
 	} catch {

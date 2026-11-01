@@ -1134,7 +1134,16 @@ async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, e
 		(projectId ? loadProjectTrim(projectId, state.durationMs) : null) ?? { startMs: headMs, endMs: state.durationMs };
 	state.browserView = projectId ? loadProjectBrowserView(projectId, state.durationMs) : normalizeBrowserView(null);
 	const surface: Surface = meta.surface ?? "browser";
-	state.telemetry = toTelemetry(events, surface, state.durationMs);
+	// Video pts 0 is the capture track's first frame — before MediaRecorder.onstart, where
+	// event t = 0 sits. Newer recordings carry the stamp; older ones fall back to the media
+	// duration's surplus over the wall-clock duration (same gap, plus encoder tail).
+	const telemetryOffsetMs =
+		meta.videoOriginAt != null
+			? meta.startedAt - meta.videoOriginAt
+			: meta.durationMs > 0
+				? Math.max(0, Math.min(4000, state.durationMs - meta.durationMs))
+				: 0;
+	state.telemetry = toTelemetry(events, surface, state.durationMs, telemetryOffsetMs);
 	// Tab capture has no OS cursor baked in; window/screen capture usually does.
 	if (!localStorage.getItem("glide.cursorTouched")) state.settings.cursor.show = surface === "browser";
 	const loaded = new Promise((r) => screenVid.addEventListener("loadeddata", r, { once: true }));

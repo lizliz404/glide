@@ -32,6 +32,13 @@ export interface RecordingMeta {
 	createdAt: number;
 	/** Date.now() when MediaRecorder started; pointer times are relative to this. */
 	startedAt: number;
+	/**
+	 * Date.now() of the capture track's first frame = the webm's video pts 0. Chrome muxes
+	 * real capture timestamps, so pts 0 predates `startedAt` (MediaRecorder.onstart) by the
+	 * mic/cam/audio setup window (~1s with webcam). Absent on recordings made before this
+	 * field existed — the editor then estimates the offset from the duration surplus.
+	 */
+	videoOriginAt?: number;
 	durationMs: number;
 	surface: Surface;
 	width: number;
