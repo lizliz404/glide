@@ -342,12 +342,7 @@ function bindControls() {
 		state.settings.cursor.show = keepCursor;
 		settingsChanged({ rebind: true });
 	});
-	const aspect = $<HTMLSelectElement>("aspect");
-	aspect.addEventListener("change", () => {
-		S().aspect = aspect.value as Aspect;
-		settingsChanged();
-	});
-	bindings.push({ sync: () => (aspect.value = S().aspect) });
+	radios($("aspect-presets"), () => S().aspect, (v) => (S().aspect = v as Aspect));
 
 	// Zoom panel
 	const depth = $("zoom-depth");
@@ -391,6 +386,36 @@ function bindControls() {
 	syncPickers();
 	bindTransport();
 	bindTimeline();
+}
+
+/** Screen Studio-style collapsible groups: each panel h2 becomes a toggle for the controls below it. */
+function makeCollapsible() {
+	const KEY = "glide.collapsed";
+	const DEFAULT_CLOSED = ["Webcam", "Browser top"];
+	let closed: string[] = DEFAULT_CLOSED;
+	try { closed = JSON.parse(localStorage.getItem(KEY) ?? "null") ?? DEFAULT_CLOSED; } catch { /* default */ }
+	for (const h of document.querySelectorAll<HTMLHeadingElement>("#panel-scene > h2, #panel-settings > h2")) {
+		const name = h.textContent!.trim();
+		const body = document.createElement("div");
+		body.className = "group-body";
+		body.id = `group-${name.toLowerCase().replace(/\W+/g, "-")}`;
+		while (h.nextSibling && !(h.nextSibling instanceof HTMLHeadingElement)) body.append(h.nextSibling);
+		h.after(body);
+		const btn = document.createElement("button");
+		btn.type = "button";
+		btn.className = "group-toggle";
+		btn.setAttribute("aria-controls", body.id);
+		btn.textContent = name;
+		h.replaceChildren(btn);
+		const set = (open: boolean) => { btn.setAttribute("aria-expanded", String(open)); body.hidden = !open; };
+		set(!closed.includes(name));
+		btn.addEventListener("click", () => {
+			const open = btn.getAttribute("aria-expanded") !== "true";
+			set(open);
+			closed = open ? closed.filter((n) => n !== name) : [...closed, name];
+			localStorage.setItem(KEY, JSON.stringify(closed));
+		});
+	}
 }
 
 function showSection(id: string) {
@@ -905,6 +930,7 @@ async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, e
 }
 
 async function init() {
+	makeCollapsible();
 	bindControls();
 	syncActions();
 	ensureBackgroundImage();
