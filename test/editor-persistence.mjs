@@ -30,8 +30,11 @@ try {
 	await page.evaluate(async ({ bytes, fixture }) => {
 		const screen = new Blob([Uint8Array.from(atob(bytes), (c) => c.charCodeAt(0))], { type: "video/webm" });
 		const db = await new Promise((resolve, reject) => {
-			const req = indexedDB.open("glide", 1);
-			req.onupgradeneeded = () => req.result.createObjectStore("recordings", { keyPath: "meta.id" });
+			const req = indexedDB.open("glide", 2);
+			req.onupgradeneeded = () => {
+				req.result.createObjectStore("recordings", { keyPath: "meta.id" });
+				req.result.createObjectStore("chunks", { autoIncrement: true }).createIndex("rec", "rec");
+			};
 			req.onsuccess = () => resolve(req.result);
 			req.onerror = () => reject(req.error);
 		});

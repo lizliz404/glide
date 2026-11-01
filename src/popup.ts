@@ -1,9 +1,11 @@
-import { listRecordings } from "./shared/db";
+import { listRecordings, recoverOrphans } from "./shared/db";
 import type { RecordOptions, Surface } from "./shared/types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const startBtn = $<HTMLButtonElement>("start");
 const stopBtn = $<HTMLButtonElement>("stop");
+const pauseBtn = $<HTMLButtonElement>("pause");
+let paused = false;
 const status = $<HTMLElement>("status");
 const mic = $<HTMLInputElement>("mic");
 const camera = $<HTMLInputElement>("camera");
@@ -41,8 +43,12 @@ async function restore() {
 		if (glideOpts.surface) surface.value = glideOpts.surface;
 	}
 	syncSurfaceNote();
-	const st = await bg<{ recording: boolean; since: number; events: number }>({ type: "status" });
-	setRecording(!!st?.recording, st?.since);
+	const st = await bg<{ recording: boolean; since: number; events: number; paused?: boolean; error?: string | null }>({ type: "status" });
+	setRecording(!!st?.recording, st?.since, !!st?.paused);
+	if (st?.error) status.textContent = st.error;
+	// A recorder that closed or crashed mid-take left its chunks behind; turn them into a recording.
+	const recovered = st?.recording ? [] : await recoverOrphans().catch(() => []);
+	if (recovered.length) status.textContent = `Recovered ${recovered.length} unfinished recording${recovered.length > 1 ? "s" : ""} (no zoom/cursor data). Open it below.`;
 	const recent = await listRecordings().catch(() => []);
 	const ul = $<HTMLUListElement>("recent");
 	for (const r of recent.slice(0, 5)) {
@@ -56,13 +62,22 @@ async function restore() {
 		ul.append(li);
 	}
 	$("recent-wrap").hidden = recent.length === 0;
+	$("intro").hidden = recent.length > 0;
+	// Show each device's permission up front, so Record never surprises with a setup tab.
+	for (const [name, el] of [["microphone", "mic-perm"], ["camera", "camera-perm"]] as const) {
+		const st = await navigator.permissions.query({ name: name as PermissionName }).catch(() => null);
+		$(el).textContent = !st ? "" : st.state === "granted" ? "· allowed" : st.state === "denied" ? "· blocked in Chrome settings" : "· asks once on Record";
+	}
 }
 
-function setRecording(on: boolean, since = 0) {
+function setRecording(on: boolean, since = 0, isPaused = false) {
+	paused = isPaused;
 	startBtn.hidden = on;
 	stopBtn.hidden = !on;
+	pauseBtn.hidden = !on;
+	pauseBtn.textContent = paused ? "Resume" : "Pause";
 	for (const el of [mic, camera, surface]) el.disabled = on;
-	status.textContent = on ? `Recording since ${new Date(since).toLocaleTimeString()}` : "";
+	status.textContent = !on ? "" : paused ? "Paused. The pause is cut from the video." : `Recording since ${new Date(since).toLocaleTimeString()}`;
 }
 
 async function devicePermissionsOk(opts: RecordOptions) {
@@ -121,10 +136,11 @@ startBtn.addEventListener("click", async () => {
 	}
 	status.textContent = "Pick what to share in Chrome's dialog…";
 	startBtn.disabled = true;
-	const res = await bg<{ ok: boolean; error?: string; pointer?: boolean }>({ type: "start", opts });
+	const res = await bg<{ ok: boolean; error?: string; pointer?: boolean; warnings?: string[] }>({ type: "start", opts });
 	startBtn.disabled = false;
 	if (res?.ok) {
 		setRecording(true, Date.now());
+		if (res.warnings?.length) status.textContent += ` ${res.warnings.join(" ")}`;
 		// Picker-based screen capture uses the focused-window pointer heuristic —
 		// follow effects work while the cursor is over a browser window.
 		status.textContent += " Cursor effects follow the pointer inside the focused browser window (best effort).";
@@ -141,6 +157,14 @@ startBtn.addEventListener("click", async () => {
 	status.textContent = /NotAllowed|permission/i.test(why)
 		? "Chrome blocked the capture. Press Record and choose a source in the dialog."
 		: `${why} — press Record to try again.`;
+});
+
+pauseBtn.addEventListener("click", async () => {
+	pauseBtn.disabled = true;
+	const res = await bg<{ ok: boolean; paused?: boolean; error?: string }>({ type: paused ? "resume" : "pause" });
+	pauseBtn.disabled = false;
+	if (res?.ok) setRecording(true, Date.now(), !!res.paused);
+	else status.textContent = res?.error ?? "Could not pause";
 });
 
 stopBtn.addEventListener("click", async () => {

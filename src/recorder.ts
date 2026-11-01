@@ -3,7 +3,7 @@
 // Captures: display (tab/window/screen), mic, webcam.
 // Display video + mixed audio go into one WebM; webcam goes into a second WebM so the
 // editor can place it freely. Pointer events from content scripts are collected here.
-import { saveRecording } from "./shared/db";
+import { appendChunk, finishChunks } from "./shared/db";
 import { acceptsPointerSender, type PointerSource } from "./shared/pointerScope";
 import type { PointerEvt, RecordOptions, RecordingMeta, Surface } from "./shared/types";
 
@@ -12,8 +12,10 @@ const isPage = new URLSearchParams(location.search).has("page");
 interface Session {
 	screenRec: MediaRecorder;
 	camRec: MediaRecorder | null;
-	screenChunks: Blob[];
-	camChunks: Blob[];
+	id: string;
+	/** Chunk writes in order; stop waits for the last one before assembling the take. */
+	writes: Promise<unknown>;
+	writeError: string | null;
 	streams: MediaStream[];
 	audioCtx: AudioContext | null;
 	events: PointerEvt[];
@@ -23,6 +25,13 @@ interface Session {
 	height: number;
 	opts: RecordOptions;
 	stopping: Promise<string> | null;
+	/** Wall-clock [from, to) ranges spent paused; `to` is 0 while still paused. */
+	pauses: [number, number][];
+}
+
+/** Wall-clock ms spent paused before `t`, so recorded time is continuous across pauses. */
+function pausedBefore(s: Session, t: number) {
+	return s.pauses.reduce((sum, [a, b]) => sum + Math.max(0, Math.min(t, b || t) - a), 0);
 }
 let session: Session | null = null;
 /** Provenance rule for incoming pointer events; set by start(). */
@@ -64,8 +73,26 @@ function pickMime(kind: "video" | "camera") {
 	return list.find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
 }
 
-async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string; surface?: Surface; requested?: Surface }> {
+function metaOf(s: Session): RecordingMeta {
+	const startedAt = s.startedAt || Date.now();
+	return {
+		id: s.id,
+		createdAt: startedAt,
+		startedAt,
+		durationMs: Date.now() - startedAt - pausedBefore(s, Date.now()),
+		surface: s.surface,
+		width: s.width,
+		height: s.height,
+		hasCamera: !!s.camRec,
+		hasMic: s.opts.mic,
+	};
+}
+
+async function start(
+	opts: RecordOptions,
+): Promise<{ ok: boolean; error?: string; surface?: Surface; requested?: Surface; warnings?: string[] }> {
 	if (session) return { ok: false, error: "Already recording" };
+	const warnings: string[] = [];
 	const streams: MediaStream[] = [];
 	try {
 		// Single-tab capture consumes a chrome.tabCapture stream id directly: no picker,
@@ -106,14 +133,14 @@ async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string
 		if (opts.mic) {
 			mic = await navigator.mediaDevices
 				.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } })
-				.catch(() => null);
+				.catch((e: DOMException) => (warnings.push(`Microphone unavailable (${e.name}); recording without it.`), null));
 			if (mic) streams.push(mic);
 		}
 		let cam: MediaStream | null = null;
 		if (opts.camera) {
 			cam = await navigator.mediaDevices
 				.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } } })
-				.catch(() => null);
+				.catch((e: DOMException) => (warnings.push(`Camera unavailable (${e.name}); recording without it.`), null));
 			if (cam) streams.push(cam);
 		}
 
@@ -132,15 +159,21 @@ async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string
 			audioTracks.push(...dest.stream.getAudioTracks());
 		}
 
+		// Scale with what was actually captured, like Screenity's per-resolution presets
+		// (720p 5, 1080p 12, 4K 20 Mbps): ~0.13 bits/pixel/frame gives ~8 Mbps at 1080p30,
+		// ~14 at 1440p30, ~32 at 4K30, clamped to 4–40 Mbps.
+		const px = (settings.width ?? 1920) * (settings.height ?? 1080) * Math.min(settings.frameRate ?? 30, 60);
+		const bitrate = Math.round(Math.min(40e6, Math.max(4e6, px * 0.13)));
 		const screenStream = new MediaStream([vTrack, ...audioTracks]);
-		const screenRec = new MediaRecorder(screenStream, { mimeType: pickMime("video"), videoBitsPerSecond: 12_000_000 });
+		const screenRec = new MediaRecorder(screenStream, { mimeType: pickMime("video"), videoBitsPerSecond: bitrate });
 		const camRec = cam ? new MediaRecorder(cam, { mimeType: pickMime("camera"), videoBitsPerSecond: 4_000_000 }) : null;
 
 		const s: Session = {
 			screenRec,
 			camRec,
-			screenChunks: [],
-			camChunks: [],
+			id: `rec-${new Date().toISOString().replace(/[:.]/g, "-")}`,
+			writes: Promise.resolve(),
+			writeError: null,
 			streams,
 			audioCtx,
 			events: [],
@@ -150,14 +183,24 @@ async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string
 			height: settings.height ?? 0,
 			opts,
 			stopping: null,
+			pauses: [],
 		};
 		// Provenance for pointer telemetry: exact tab for tabCapture, focused-window
 		// heuristic for picker-based window/screen captures. Refresh focus now — the
 		// window that was active when capture began is the best heuristic we have.
 		pointerSource = opts.sourceTabId != null ? { kind: "tab", tabId: opts.sourceTabId } : { kind: "focused-window" };
 		await refreshFocusedWindow();
-		screenRec.ondataavailable = (e) => e.data.size && s.screenChunks.push(e.data);
-		if (camRec) camRec.ondataavailable = (e) => e.data.size && s.camChunks.push(e.data);
+		// Every second's chunk goes straight to IndexedDB (as Screenity does), so memory stays flat on
+		// long takes and a crashed or closed recorder still leaves a recoverable recording.
+		const keep = (kind: "screen" | "camera") => (e: BlobEvent) => {
+			if (!e.data.size) return;
+			const row = { rec: s.id, kind, data: e.data, meta: metaOf(s) };
+			s.writes = s.writes.then(() => appendChunk(row)).catch((err: DOMException) => {
+				s.writeError = `Could not save recording data (${err?.name ?? "error"}). Free disk space and stop soon.`;
+			});
+		};
+		screenRec.ondataavailable = keep("screen");
+		if (camRec) camRec.ondataavailable = keep("camera");
 		// User clicked Chrome's "Stop sharing".
 		vTrack.addEventListener("ended", () => void stop());
 
@@ -167,7 +210,7 @@ async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string
 		screenRec.start(1000);
 		await started;
 		s.startedAt = Date.now();
-		return { ok: true, surface: s.surface, requested: opts.surface };
+		return { ok: true, surface: s.surface, requested: opts.surface, warnings };
 	} catch (err) {
 		for (const st of streams) for (const t of st.getTracks()) t.stop();
 		session = null;
@@ -177,6 +220,17 @@ async function start(opts: RecordOptions): Promise<{ ok: boolean; error?: string
 		void chrome.runtime.sendMessage({ target: "background", type: "failed", error, page: isPage }).catch(() => {});
 		return { ok: false, error };
 	}
+}
+
+function setPaused(on: boolean) {
+	const s = session;
+	if (!s || s.stopping) return { ok: false, error: "Not recording" };
+	const paused = s.pauses.at(-1)?.[1] === 0;
+	if (on === paused) return { ok: true, paused };
+	for (const r of [s.screenRec, s.camRec]) if (r) on ? r.pause() : r.resume();
+	if (on) s.pauses.push([Date.now(), 0]);
+	else s.pauses.at(-1)![1] = Date.now();
+	return { ok: true, paused: on };
 }
 
 function stopRecorder(r: MediaRecorder | null) {
@@ -192,28 +246,20 @@ function stop(): Promise<string> {
 	if (!s) return Promise.resolve("");
 	if (s.stopping) return s.stopping;
 	s.stopping = (async () => {
+		if (s.pauses.at(-1)?.[1] === 0) s.pauses.at(-1)![1] = Date.now();
 		await Promise.all([stopRecorder(s.screenRec), stopRecorder(s.camRec)]);
 		for (const st of s.streams) for (const t of st.getTracks()) t.stop();
 		await Promise.race([s.audioCtx?.close(), new Promise((r) => setTimeout(r, 1000))]);
-		const meta: RecordingMeta = {
-			id: `rec-${new Date().toISOString().replace(/[:.]/g, "-")}`,
-			createdAt: Date.now(),
-			startedAt: s.startedAt,
-			durationMs: Date.now() - s.startedAt,
-			surface: s.surface,
-			width: s.width,
-			height: s.height,
-			hasCamera: s.camChunks.length > 0,
-			hasMic: s.opts.mic,
-		};
-		const id = await saveRecording({
+		const meta = metaOf(s);
+		await s.writes;
+		const id = await finishChunks(
+			s.id,
+			s.events.filter((e) => e.t >= s.startedAt).map((e) => ({ ...e, t: e.t - s.startedAt - pausedBefore(s, e.t) })),
 			meta,
-			screen: new Blob(s.screenChunks, { type: "video/webm" }),
-			camera: s.camChunks.length ? new Blob(s.camChunks, { type: "video/webm" }) : null,
-			events: s.events.filter((e) => e.t >= s.startedAt).map((e) => ({ ...e, t: e.t - s.startedAt })),
-		});
+		);
 		session = null;
 		pointerSource = { kind: "unknown" };
+		if (!id) throw new Error(s.writeError ?? "Nothing was recorded");
 		// Defer: let the "stop" reply reach the service worker first, because handling
 		// "saved" closes this offscreen document.
 		setTimeout(() => {
@@ -243,13 +289,16 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 		// Only events provably inside the recorded surface become zoom/cursor data.
 		// `sender` is Chrome's message metadata, so a page cannot claim another identity.
 		if (!acceptsPointerSender(pointerSource, sender?.tab, focusedWindowId)) return;
-		session?.events.push(msg.evt as PointerEvt);
+		// Movement while paused is not in the video, so it is not kept either.
+		if (session && session.pauses.at(-1)?.[1] !== 0) session.events.push(msg.evt as PointerEvt);
 		return;
 	}
 	if (isPage && msg.type === "start") return; // page mode starts from its own button
 	(async () => {
 		if (msg.type === "start") reply(await start(msg.opts));
-		else if (msg.type === "stop") reply({ ok: true, id: await stop() });
+		else if (msg.type === "stop")
+			reply(await stop().then((id) => ({ ok: true, id }), (e: Error) => ({ ok: false, error: e.message })));
+		else if (msg.type === "pause" || msg.type === "resume") reply(setPaused(msg.type === "pause"));
 		else if (msg.type === "status")
 			reply({
 				recording: !!session,
@@ -264,6 +313,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
 							? "window"
 							: "off",
 				surface: session?.surface ?? null,
+				paused: session?.pauses.at(-1)?.[1] === 0,
+				error: session?.writeError ?? null,
 			});
 	})();
 	return true;
@@ -327,7 +378,7 @@ if (isPage) {
 				: res.surface === "browser"
 					? "Recording this tab. To record tab switches, stop and choose a browser window."
 					: "Recording the selected screen. Keep this recorder open.";
-		status.textContent = `${what} Cursor effects follow the focused window — they track the pointer inside whichever window is active (best effort, not exact).`;
+		status.textContent = `${[what, ...(res.warnings ?? [])].join(" ")} Cursor effects follow the focused window — they track the pointer inside whichever window is active (best effort, not exact).`;
 	});
 	// Guard while the session object exists: stopping is async, so "Saving…" is still unsaved.
 	window.addEventListener("beforeunload", (e) => {

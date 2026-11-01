@@ -251,6 +251,22 @@ try {
 	}, port);
 	console.log("pointer logger in target tab:", JSON.stringify(logger));
 	if (logger.injected !== true) throw new Error("pointer logger was not injected into the target tab");
+	if (PAGE_MODE) {
+		const checkPopup = await browser.newPage();
+		await checkPopup.goto(`chrome-extension://${extId}/popup.html`);
+		await checkPopup.waitForSelector("#stop:not([hidden])");
+		await checkPopup.close();
+	}
+	// Pause/resume: the paused gap must be cut from both the video and the metadata.
+	const pauseMs = 2000;
+	const paused = await ctl.evaluate(() => chrome.runtime.sendMessage({ target: "background", type: "pause" }));
+	const pausedStatus = await ctl.evaluate(() => chrome.runtime.sendMessage({ target: "background", type: "status" }));
+	if (!paused?.paused || !pausedStatus?.paused) throw new Error(`pause not reported: ${JSON.stringify({ paused, pausedStatus })}`);
+	await new Promise((r) => setTimeout(r, pauseMs));
+	const resumed = await ctl.evaluate(() => chrome.runtime.sendMessage({ target: "background", type: "resume" }));
+	if (!resumed?.ok || resumed.paused) throw new Error(`resume failed: ${JSON.stringify(resumed)}`);
+	await new Promise((r) => setTimeout(r, 500));
+	const wallMs = Date.now() - status.since;
 	const stop = await ctl.evaluate(() => chrome.runtime.sendMessage({ target: "background", type: "stop" }));
 	console.log("stop:", JSON.stringify(stop));
 	const edTarget = await editorOpened;
@@ -319,6 +335,11 @@ try {
 		URL.revokeObjectURL(url);
 		return out;
 	});
+	const metaMs = await ed.evaluate((id) => glide.state.meta?.durationMs ?? null, stop.id);
+	console.log("pause:", JSON.stringify({ wallMs, metaMs, videoMs: frames.durationMs }));
+	if (metaMs != null && wallMs - metaMs < pauseMs - 300) throw new Error("durationMs still includes the pause");
+	// Headless software capture lags by up to ~1 s around pause, so require only that most of the gap is gone.
+	if (wallMs - frames.durationMs < pauseMs / 2) throw new Error("video still includes the pause");
 	console.log("recorded frames:", JSON.stringify(frames));
 	if (!frames.size[0] || !frames.size[1]) throw new Error(`recorded video has no frames: ${JSON.stringify(frames)}`);
 	const onTarget = frames.samples.filter(([r, g, b]) => r > 60 && b > 140 && g < 100).length;
