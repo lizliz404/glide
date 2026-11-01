@@ -33,12 +33,12 @@ function recordingCtx() {
 }
 
 describe("glide cursor defaults", () => {
-	it("match Recordly's focused preset + E/types.ts defaults", () => {
+	it("default to a lag-free dot marker (one visual pointer with the baked OS cursor)", () => {
 		expect(CURSOR_DEFAULTS).toEqual({
 			show: true,
-			style: "tahoe",
-			size: 2.5,
-			smoothing: 0.67,
+			style: "dot",
+			size: 0.6,
+			smoothing: 0,
 			spring: { stiffnessMultiplier: 1.35, dampingMultiplier: 0.79, massMultiplier: 1.29 },
 			clickEffect: "none",
 			clickEffectColor: "#2563EB",
@@ -50,9 +50,9 @@ describe("glide cursor defaults", () => {
 
 	it("builds the render config like frameRenderer (dotRadius = 28 x size)", () => {
 		const cfg = toRenderConfig(CURSOR_DEFAULTS);
-		expect(cfg.dotRadius).toBe(DEFAULT_CURSOR_CONFIG.dotRadius * 2.5);
-		expect(cfg.dotRadius).toBe(70);
-		expect(cfg.smoothingFactor).toBe(0.67);
+		expect(cfg.dotRadius).toBe(DEFAULT_CURSOR_CONFIG.dotRadius * 0.6);
+		expect(cfg.dotRadius).toBeCloseTo(16.8);
+		expect(cfg.smoothingFactor).toBe(0);
 		expect(cfg.springTuning).toEqual(CURSOR_DEFAULTS.spring);
 		expect(cfg.clickEffectDurationMs).toBe(600);
 	});
@@ -60,7 +60,9 @@ describe("glide cursor defaults", () => {
 
 describe("glide cursor smoothing", () => {
 	it("converges to the target within ~1 s of 60 fps steps", () => {
-		const cfg = toRenderConfig(CURSOR_DEFAULTS);
+		// Explicit smoothing: the default (0) snaps instantly, which is the point of the
+		// dot marker — this test exercises the spring mechanics, not the default.
+		const cfg = toRenderConfig({ ...CURSOR_DEFAULTS, smoothing: 0.67 });
 		const state = new SmoothedCursorState({
 			smoothingFactor: cfg.smoothingFactor!,
 			springTuning: cfg.springTuning!,

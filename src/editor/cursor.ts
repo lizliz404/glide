@@ -42,9 +42,16 @@ const FOCUSED = CURSOR_MOTION_PRESETS.focused;
 /** Recordly defaults: the "focused" motion preset (DEFAULT_MOTION_PRESET) on top of E/types.ts. */
 export const CURSOR_DEFAULTS: CursorConfig = {
 	show: true,
-	style: DEFAULT_CURSOR_STYLE, // "tahoe" = Golden Gate in Recordly's UI
-	size: FOCUSED.cursorSize, // 2.5 (raw DEFAULT_CURSOR_SIZE 3.0 is overridden by the preset)
-	smoothing: FOCUSED.cursorSmoothing, // 0.67
+	// "dot", not an arrow sprite: Chrome bakes the OS cursor into every capture on some
+	// platforms (Linux window/screen ignore cursor:"never"; tab capture has no such
+	// constraint), so drawing a second arrow means two pointers on screen. A dot reads
+	// as a locator highlight at the pointer, not another mouse. Users who capture on a
+	// platform that honors cursor:"never" can still pick an arrow in the Cursor panel.
+	style: "dot",
+	size: 0.6, // ~17px at export scale: a tight accent, not a mouse replacement
+	// 0 = spring stiffness 1000 → tracks the logged pointer 1:1. The baked OS cursor is
+	// the real pointer; any lag in the marker reads as a second, delayed mouse.
+	smoothing: 0,
 	spring: {
 		stiffnessMultiplier: FOCUSED.cursorSpringStiffnessMultiplier, // 1.35
 		dampingMultiplier: FOCUSED.cursorSpringDampingMultiplier, // 0.79

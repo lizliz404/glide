@@ -12,7 +12,7 @@ describe("glide defaults = Recordly defaults", () => {
 		expect(s.frame).toMatchObject({ padding: 20, borderRadius: 8, shadowIntensity: 0.67, backgroundBlur: 0 });
 		expect(s.frame.background).toEqual({ kind: "image", url: "wallpapers/tahoe-light.jpg" });
 		expect(s.webcam).toMatchObject({ sizePercent: 40, roundness: 100, shadow: 0.3, margin: 24, positionPreset: "bottom-right", mirror: true, reactToZoom: true });
-		expect(s.cursor).toMatchObject({ show: true, style: "tahoe", size: 2.5, smoothing: 0.67, clickEffect: "none", clickBounce: 2, clickBounceDuration: 350, sway: 0.4 });
+		expect(s.cursor).toMatchObject({ show: true, style: "dot", size: 0.6, smoothing: 0, clickEffect: "none", clickBounce: 2, clickBounceDuration: 350, sway: 0.4 });
 	});
 
 	it("applies the Smooth preset like SettingsPanel", () => {
