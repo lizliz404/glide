@@ -38,6 +38,8 @@ export interface RecordingMeta {
 	height: number;
 	hasCamera: boolean;
 	hasMic: boolean;
+	/** Head of the take the editor hides by default: warm-up recorded after the Record countdown. */
+	headTrimMs?: number;
 }
 
 export interface RecordingBundle {
@@ -61,4 +63,6 @@ export interface RecordOptions {
 	sourceTabId?: number;
 	/** True when the pointer-logging content script was registered for this session. */
 	pointerEnabled?: boolean;
+	/** Set by the service worker when it ran the Record countdown: the editor pre-trims this warm-up head. */
+	headTrimMs?: number;
 }

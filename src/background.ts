@@ -5,7 +5,38 @@ import type { RecordOptions } from "./shared/types";
 
 const OFFSCREEN = "recorder.html";
 const CS_ID = "glide-pointer";
+const COUNTDOWN_SECONDS = 3;
+/** Warm-up head the editor hides on countdown takes: MediaRecorder ramp plus the
+ *  share pill appearing. */
+const HEAD_TRIM_MS = 1000;
 const handled = new Set<string>();
+
+/** Injected into the captured tab before rolling: tabCapture shows no picker, so this
+ *  is the only Record→rolling signal. Runs in the page's DOM (isolated world) and must
+ *  stay self-contained — nothing from the service worker scope is reachable. */
+function countdownOverlay(seconds: number): Promise<void> {
+	return new Promise((resolve) => {
+		const veil = document.createElement("div");
+		veil.style.cssText =
+			"position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;" +
+			"background:rgba(9,11,15,.38);pointer-events:none;font-family:system-ui,sans-serif";
+		const num = document.createElement("div");
+		num.style.cssText = "font-size:120px;font-weight:700;color:#fff;text-shadow:0 2px 28px rgba(0,0,0,.55)";
+		veil.append(num);
+		document.documentElement.append(veil);
+		let n = seconds;
+		const tick = () => {
+			if (n <= 0) {
+				veil.remove();
+				resolve();
+				return;
+			}
+			num.textContent = String(n--);
+			setTimeout(tick, 950);
+		};
+		tick();
+	});
+}
 /** Tab that owns start/stop/status. Active-tab selection breaks once the user switches away. */
 let recorderOwnerId: number | null = null;
 
@@ -209,6 +240,14 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 					break;
 				}
 				const pointer = await startPointerLogging();
+				// The picker is the signal on the other surfaces; tabCapture has none, so
+				// count down inside the tab about to be captured. Best effort: a page that
+				// cannot be injected (no host access, chrome://) just starts at once. The
+				// cap keeps a destroyed frame from stalling the start forever.
+				await Promise.race([
+					chrome.scripting.executeScript({ target: { tabId }, func: countdownOverlay, args: [COUNTDOWN_SECONDS] }),
+					new Promise((r) => setTimeout(r, COUNTDOWN_SECONDS * 1000 + 1500)),
+				]).catch(() => {});
 				let streamId: string;
 				try {
 					streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tabId });
@@ -222,7 +261,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 					.sendMessage({
 						target: "recorder",
 						type: "start",
-						opts: { ...opts, tabStreamId: streamId, sourceTabId: tabId, pointerEnabled: pointer },
+						opts: { ...opts, tabStreamId: streamId, sourceTabId: tabId, pointerEnabled: pointer, headTrimMs: HEAD_TRIM_MS },
 					})
 					.catch((err: unknown) => ({ ok: false, error: err instanceof Error ? err.message : "Recorder unavailable" }));
 				if (res?.ok) {

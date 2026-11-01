@@ -85,6 +85,7 @@ function metaOf(s: Session): RecordingMeta {
 		height: s.height,
 		hasCamera: !!s.camRec,
 		hasMic: s.opts.mic,
+		headTrimMs: s.opts.headTrimMs,
 	};
 }
 

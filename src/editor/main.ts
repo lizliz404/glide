@@ -24,7 +24,7 @@ import { applyMotionPreset, defaultSettings, loadSettings, outputSize, saveSetti
 import { toTelemetry } from "./telemetry";
 import { loadProjectZooms, loadProjectTrim, loadProjectBrowserView, saveProjectZooms } from "./project";
 import { browserCrop, normalizeBrowserView } from "./browserView";
-import { fullTrim, setTrimEdge, type TrimRange } from "./trim";
+import { fullTrim, setTrimEdge, MIN_TRIM_MS, type TrimRange } from "./trim";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const canvas = $<HTMLCanvasElement>("stage");
@@ -1127,7 +1127,11 @@ async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, e
 	state.camBlob = c?.blob ?? null;
 	state.events = events;
 	state.durationMs = s.durationMs || meta.durationMs;
-	state.trim = (projectId ? loadProjectTrim(projectId, state.durationMs) : null) ?? fullTrim(state.durationMs);
+	// Countdown takes carry a known warm-up head (MediaRecorder ramp, share pill appearing);
+	// hide it by default — the trim handles and Reset still expose the full source.
+	const headMs = meta.headTrimMs && meta.headTrimMs + MIN_TRIM_MS <= state.durationMs ? meta.headTrimMs : 0;
+	state.trim =
+		(projectId ? loadProjectTrim(projectId, state.durationMs) : null) ?? { startMs: headMs, endMs: state.durationMs };
 	state.browserView = projectId ? loadProjectBrowserView(projectId, state.durationMs) : normalizeBrowserView(null);
 	const surface: Surface = meta.surface ?? "browser";
 	state.telemetry = toTelemetry(events, surface, state.durationMs);
