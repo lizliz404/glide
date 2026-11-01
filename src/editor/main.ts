@@ -1100,7 +1100,7 @@ function runExport(container: "mp4" | "webm", onProgress?: (p: number) => void, 
 		trim: structuredClone(state.trim),
 		onProgress,
 		signal,
-	} as Parameters<typeof exportVideo>[0]);
+	});
 }
 
 // ------------------------------------------------------------------------------------------------
