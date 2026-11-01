@@ -1,4 +1,4 @@
-import { listRecordings } from "./shared/db";
+import { listRecordings, recoverOrphans } from "./shared/db";
 import type { RecordOptions, Surface } from "./shared/types";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -41,8 +41,12 @@ async function restore() {
 		if (glideOpts.surface) surface.value = glideOpts.surface;
 	}
 	syncSurfaceNote();
-	const st = await bg<{ recording: boolean; since: number; events: number }>({ type: "status" });
+	const st = await bg<{ recording: boolean; since: number; events: number; error?: string | null }>({ type: "status" });
 	setRecording(!!st?.recording, st?.since);
+	if (st?.error) status.textContent = st.error;
+	// A recorder that closed or crashed mid-take left its chunks behind; turn them into a recording.
+	const recovered = st?.recording ? [] : await recoverOrphans().catch(() => []);
+	if (recovered.length) status.textContent = `Recovered ${recovered.length} unfinished recording${recovered.length > 1 ? "s" : ""} (no zoom/cursor data). Open it below.`;
 	const recent = await listRecordings().catch(() => []);
 	const ul = $<HTMLUListElement>("recent");
 	for (const r of recent.slice(0, 5)) {
@@ -95,12 +99,13 @@ startBtn.addEventListener("click", async () => {
 	}
 	status.textContent = "Pick what to share in Chrome's dialog…";
 	startBtn.disabled = true;
-	const res = await bg<{ ok: boolean; error?: string; pointer?: boolean }>({ type: "start", opts });
+	const res = await bg<{ ok: boolean; error?: string; pointer?: boolean; warnings?: string[] }>({ type: "start", opts });
 	startBtn.disabled = false;
 	if (res?.ok) {
 		setRecording(true, Date.now());
 		// Zoom and cursor need pointer data, which Glide only keeps when it can prove which
 		// surface was captured (see src/shared/pointerScope.ts).
+		if (res.warnings?.length) status.textContent += ` ${res.warnings.join(" ")}`;
 		status.textContent += " Zoom and cursor effects are off: Glide cannot verify which tab or window is being recorded.";
 		return;
 	}

@@ -150,7 +150,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
 				const page = await askRecorder("status");
 				if (page) return reply(page);
 				const ctx = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT] });
-				reply(ctx.length ? await chrome.runtime.sendMessage({ target: "recorder", type: "status" }).catch(() => ({ recording: false })) : { recording: false });
+				const st = ctx.length ? await chrome.runtime.sendMessage({ target: "recorder", type: "status" }).catch(() => ({ recording: false })) : { recording: false };
+				// The recorder tab was closed or the document died: drop the stale REC badge.
+				if (!st?.recording) await setBadge(false);
+				reply(st);
 				break;
 			}
 			case "saved": {
