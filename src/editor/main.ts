@@ -125,7 +125,15 @@ function loop() {
 		return;
 	}
 	draw(false);
-	if (!screenVid.paused) requestAnimationFrame(loop);
+	if (!screenVid.paused) scheduleFrame();
+}
+// Draw once per decoded video frame when the browser supports it (no duplicated/skipped frames from
+// rAF beating against the video clock); fall back to rAF elsewhere.
+type RVFCVideo = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number };
+function scheduleFrame() {
+	const v = screenVid as RVFCVideo;
+	if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(loop);
+	else requestAnimationFrame(loop);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -712,7 +720,7 @@ function bindTransport() {
 			if (screenVid.ended || currentMs() < state.trim.startMs || currentMs() >= state.trim.endMs - 30) seekTo(state.trim.startMs);
 			void screenVid.play();
 			if (hasCam()) void camVid.play();
-			requestAnimationFrame(loop);
+			scheduleFrame();
 		} else {
 			screenVid.pause();
 			camVid.pause();
