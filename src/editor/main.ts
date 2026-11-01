@@ -575,7 +575,7 @@ function syncTrimControls() {
 /** File/export actions and trim affordances follow loaded media and the export lock. */
 function syncActions() {
 	const hasMedia = !!state.screenBlob;
-	for (const id of ["export-mp4", "export-webm"]) $<HTMLButtonElement>(id).disabled = !hasMedia || exporting;
+	for (const id of ["export-mp4", "export-webm", "export-resolution", "export-quality"]) $<HTMLButtonElement>(id).disabled = !hasMedia || exporting;
 	for (const id of ["add-zoom", "suggest-zooms"]) $<HTMLButtonElement>(id).disabled = !hasMedia;
 	$<HTMLInputElement>("open-files").disabled = exporting;
 	for (const id of ["trim-start", "trim-end"]) $<HTMLButtonElement>(id).disabled = !hasMedia;
@@ -852,8 +852,26 @@ function bindTransport() {
 	$("cancel").addEventListener("click", () => ctrl?.abort());
 }
 
+type ExportPrefs = { resolution: 720 | 1080 | 2160; quality: "standard" | "high" };
+const EXPORT_KEY = "glide.export";
+function exportPrefs(): ExportPrefs {
+	const resolution = Number($<HTMLSelectElement>("export-resolution").value) as ExportPrefs["resolution"];
+	const quality = $<HTMLSelectElement>("export-quality").value as ExportPrefs["quality"];
+	return { resolution, quality };
+}
+function bindExportPrefs() {
+	try {
+		const p = JSON.parse(localStorage.getItem(EXPORT_KEY) ?? "null") as ExportPrefs | null;
+		if (p && [720, 1080, 2160].includes(p.resolution)) $<HTMLSelectElement>("export-resolution").value = String(p.resolution);
+		if (p && (p.quality === "standard" || p.quality === "high")) $<HTMLSelectElement>("export-quality").value = p.quality;
+	} catch { /* defaults */ }
+	for (const id of ["export-resolution", "export-quality"]) $(id).addEventListener("change", () => localStorage.setItem(EXPORT_KEY, JSON.stringify(exportPrefs())));
+}
+
 function runExport(container: "mp4" | "webm", onProgress?: (p: number) => void, signal?: AbortSignal): Promise<ExportResult> {
+	// resolution/quality are read by the export backend on rec-hardening; cast until that merges.
 	return exportVideo({
+		...exportPrefs(),
 		container,
 		fps: 30,
 		screen: state.screenBlob!,
@@ -865,7 +883,7 @@ function runExport(container: "mp4" | "webm", onProgress?: (p: number) => void, 
 		trim: structuredClone(state.trim),
 		onProgress,
 		signal,
-	});
+	} as Parameters<typeof exportVideo>[0]);
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -931,6 +949,7 @@ async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, e
 
 async function init() {
 	makeCollapsible();
+	bindExportPrefs();
 	bindControls();
 	syncActions();
 	ensureBackgroundImage();

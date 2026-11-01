@@ -17,6 +17,12 @@
   <div class="export-group">
     <progress id="progress" max="1" value="0" hidden aria-label="Export progress"></progress>
     <button id="cancel" type="button" class="btn ghost" hidden>Cancel</button>
+    <select id="export-resolution" class="select" aria-label="Export resolution" title="Export resolution (short side)">
+      <option value="720">720p</option><option value="1080" selected>1080p</option><option value="2160">4K</option>
+    </select>
+    <select id="export-quality" class="select" aria-label="Export quality" title="Export quality">
+      <option value="standard">Standard</option><option value="high" selected>High</option>
+    </select>
     <button id="export-webm" type="button" class="btn">Export WebM</button>
     <button id="export-mp4" type="button" class="btn primary">Export MP4</button>
   </div>
