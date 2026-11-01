@@ -833,7 +833,8 @@ function bindTransport() {
 			}, ctrl.signal);
 			const a = document.createElement("a");
 			a.href = URL.createObjectURL(res.blob);
-			a.download = `glide-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.${container}`;
+			const d = new Date(), p = (n: number) => String(n).padStart(2, "0");
+			a.download = `Glide ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}-${p(d.getMinutes())}.${container}`;
 			a.click();
 			status(`Exported ${res.width}×${res.height} ${container.toUpperCase()} (${res.videoCodec}${res.audioCodec ? ` + ${res.audioCodec}` : ""}, ${(res.blob.size / 1e6).toFixed(1)} MB) in ${((performance.now() - t0) / 1000).toFixed(1)}s`);
 		} catch (err) {
