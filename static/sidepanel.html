@@ -15,7 +15,7 @@
   </header>
   <p id="status" class="hint" role="status" aria-live="polite">Not recording — press Record in the Glide popup.</p>
 
-  <section class="sp-card" aria-label="Webcam">
+  <section class="sp-card sp-cam" aria-label="Webcam">
     <video id="cam" autoplay muted playsinline hidden></video>
     <p id="cam-fallback" class="sp-fallback">Camera off</p>
   </section>
@@ -27,9 +27,21 @@
     </div>
   </section>
 
-  <div class="sp-prompt-bar">
-    <button id="tele-toggle" type="button" class="btn ghost wide">Teleprompter</button>
-  </div>
+  <section class="sp-card sp-tele" aria-label="Teleprompter">
+    <div class="sp-prompt-bar">
+      <span class="hint">Script</span>
+      <span class="spacer"></span>
+      <button id="tele-popout" type="button" class="btn small ghost" title="Open the teleprompter as a separate window">Pop out</button>
+      <button id="present" type="button" class="btn small">Present</button>
+    </div>
+    <textarea id="script" rows="5" aria-label="Teleprompter script" placeholder="Paste the lines you want to read. Space = scroll/pause · ↑↓ nudge."></textarea>
+    <div id="prompter" class="sp-prompter" hidden tabindex="0" aria-label="Presenting script"></div>
+    <div id="present-controls" class="sp-prompt-bar" hidden>
+      <label class="inline" for="speed">Speed <input id="speed" type="range" min="8" max="80" value="28" /></label>
+      <label class="inline" for="fs">Size <input id="fs" type="range" min="14" max="40" value="22" /></label>
+      <button id="pause-scroll" type="button" class="btn small ghost" aria-pressed="false">Pause</button>
+    </div>
+  </section>
 
   <p id="capture-hint" class="hint" hidden>This panel is inside a window or screen capture. Move it to another window or monitor, or record a single tab, to keep it out of frame.</p>
   <button id="stop" type="button" class="btn danger wide" hidden>Stop and edit</button>

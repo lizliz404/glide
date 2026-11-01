@@ -157,25 +157,32 @@ body.exporting #empty { pointer-events: auto; opacity: 1; }
 .credit { padding: 4px 16px 6px; font-size: 11px; color: var(--muted); background: var(--panel); text-align: right; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
-/* side panel */
-body.sidepanel { width: 100%; max-width: 360px; min-height: 100vh; margin: 0 auto; padding: 14px 14px 20px; display: flex; flex-direction: column; gap: 10px; }
+/* side panel — compact utility column (~300px, Loom-class control panels run
+   280–320px); the cam preview is a small centered thumb, not a full-width face. */
+body.sidepanel { width: 100%; max-width: 300px; height: 100vh; margin: 0 auto; padding: 14px 12px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .sp-status { display: flex; align-items: center; gap: 8px; min-height: 24px; }
 .sp-status .mono { color: var(--text); font-size: 15px; }
 .sp-pill { margin-left: auto; font-size: 11px; color: var(--text); background: #1a1f2b; border: 1px solid var(--line); border-radius: 99px; padding: 2px 8px; }
 .sp-pill[data-pointer="off"] { color: var(--muted); }
 .sp-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
-#cam { width: 100%; aspect-ratio: 16/9; object-fit: cover; border-radius: 8px; background: #000; transform: scaleX(-1); }
-.sp-fallback { margin: 0; min-height: 72px; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+.sp-cam { text-align: center; }
+#cam { display: block; width: 100%; max-width: 176px; margin: 0 auto; aspect-ratio: 16/9; object-fit: cover; border-radius: 8px; background: #000; transform: scaleX(-1); }
+.sp-fallback { margin: 0; min-height: 48px; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
 .sp-meter-row { display: flex; align-items: center; gap: 8px; }
-.sp-meter-track { flex: 1; height: 8px; border-radius: 99px; background: #0e1118; border: 1px solid var(--line); overflow: hidden; }
-.sp-meter-fill { width: 0; height: 100%; background: var(--accent); border-radius: 99px; }
+/* Thin meter: full-width level gradient clipped from the right so green→amber→red
+   zones stay anchored to position, not to the current level. */
+.sp-meter-track { flex: 1; height: 4px; border-radius: 99px; background: #0e1118; overflow: hidden; }
+.sp-meter-fill { width: 100%; height: 100%; border-radius: 99px; background: linear-gradient(90deg, #3dd68c 0%, #3dd68c 60%, #f5a524 78%, #e5484d 92%); clip-path: inset(0 calc(100% - var(--lv, 0%)) 0 0); }
 .sp-prompt-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .sp-prompt-bar .hint { margin: 0; }
-body.sidepanel textarea { width: 100%; resize: vertical; min-height: 96px; background: #0e1118; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; line-height: 1.45; }
+/* The teleprompter card takes the leftover column space. */
+.sp-tele { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sp-tele textarea { flex: 1; min-height: 84px; }
+body.sidepanel textarea { width: 100%; resize: vertical; background: #0e1118; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; line-height: 1.45; }
 body.sidepanel textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.sp-prompter { max-height: 42vh; overflow: auto; font-size: 22px; line-height: 1.45; letter-spacing: -0.01em; white-space: pre-wrap; padding: 4px 2px 28vh; }
-#present-controls { margin: 8px 0 0; }
-#present-controls label { margin: 0; flex: 1; justify-content: flex-start; color: var(--muted); font-size: 12px; }
+.sp-prompter { flex: 1; min-height: 0; overflow: auto; line-height: 1.45; letter-spacing: -0.01em; white-space: pre-wrap; padding: 4px 2px 24vh; }
+#present-controls { margin: 8px 0 0; flex-wrap: wrap; }
+#present-controls label { margin: 0; flex: 1; min-width: 110px; justify-content: flex-start; color: var(--muted); font-size: 12px; }
 body.sidepanel #stop { margin-top: 4px; }
 
 /* floating teleprompter window */

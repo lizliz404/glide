@@ -29,7 +29,14 @@ const cam = $<HTMLVideoElement>("cam");
 const camFallback = $<HTMLElement>("cam-fallback");
 const micLabel = $<HTMLElement>("mic-label");
 const micFill = $<HTMLElement>("mic-level");
-const teleToggle = $<HTMLButtonElement>("tele-toggle");
+const scriptEl = $<HTMLTextAreaElement>("script");
+const prompter = $<HTMLElement>("prompter");
+const presentBtn = $<HTMLButtonElement>("present");
+const presentControls = $<HTMLElement>("present-controls");
+const speed = $<HTMLInputElement>("speed");
+const fontSize = $<HTMLInputElement>("fs");
+const pauseScroll = $<HTMLButtonElement>("pause-scroll");
+const popoutBtn = $<HTMLButtonElement>("tele-popout");
 const captureHint = $<HTMLElement>("capture-hint");
 const stopBtn = $<HTMLButtonElement>("stop");
 
@@ -45,6 +52,11 @@ let camOpening = false;
 let micOpening = false;
 let audioCtx: AudioContext | null = null;
 let stopping = false;
+let scriptTimer = 0;
+let teleTimer = 0;
+let presenting = false;
+let scrollPaused = false;
+let scrollRaf = 0;
 
 function setStatus(msg: string) {
 	statusEl.textContent = msg;
@@ -147,7 +159,7 @@ async function openMic() {
 				let sum = 0;
 				for (const n of data) sum += n * n;
 				const rms = Math.sqrt(sum / data.length);
-				micFill.style.width = `${Math.min(100, Math.round(rms * 280))}%`;
+				micFill.style.setProperty("--lv", `${Math.min(100, Math.round(rms * 280))}%`);
 				last = now;
 			}
 			meterRaf = requestAnimationFrame(tick);
@@ -167,22 +179,94 @@ function closeMic() {
 	micStream = null;
 	void audioCtx?.close();
 	audioCtx = null;
-	micFill.style.width = "0";
+	micFill.style.setProperty("--lv", "0%");
 	micLabel.textContent = opts.mic ? "Mic off" : "Mic off";
 }
 
-async function syncTeleToggle() {
-	const st = await bg<{ open: boolean }>({ type: "tele-state" }).catch(() => null);
-	teleToggle.textContent = st?.open ? "Close teleprompter" : "Teleprompter";
-	teleToggle.setAttribute("aria-pressed", String(!!st?.open));
+// Inline teleprompter, docked in the panel's bottom space. The separate
+// teleprompter.html window stays as a "Pop out" option for multi-monitor
+// setups; it cannot overlay other windows on some Linux compositors, so
+// this docked view is the default path.
+function applyTelePrefs() {
+	prompter.style.fontSize = `${fontSize.value}px`;
+}
+
+function queueScriptSave() {
+	clearTimeout(scriptTimer);
+	scriptTimer = window.setTimeout(() => void chrome.storage.local.set({ glideScript: scriptEl.value }), 400);
+}
+
+function queueTeleSave() {
+	clearTimeout(teleTimer);
+	teleTimer = window.setTimeout(() => {
+		void chrome.storage.local.set({
+			glideTele: { speed: Number(speed.value), fontSize: Number(fontSize.value), opacity: 100 },
+		});
+	}, 400);
+}
+
+function setPresent(on: boolean) {
+	presenting = on;
+	scriptEl.hidden = on;
+	prompter.hidden = !on;
+	presentControls.hidden = !on;
+	presentBtn.textContent = on ? "Edit" : "Present";
+	presentBtn.setAttribute("aria-pressed", String(on));
+	if (on) {
+		prompter.textContent = scriptEl.value || "No script yet.";
+		prompter.scrollTop = 0;
+		setScrollPaused(false);
+		startScroll();
+		prompter.focus();
+	} else {
+		stopScroll();
+		scriptEl.focus();
+	}
+}
+
+function startScroll() {
+	stopScroll();
+	let last = 0;
+	// scrollTop writes round to whole pixels, so `+= subpixel delta` never
+	// accumulates — keep our own position and resync on manual scrolls.
+	let pos = prompter.scrollTop;
+	const step = (now: number) => {
+		if (!presenting) return;
+		if (!scrollPaused && last) {
+			const pxPerSec = Number(speed.value) || 28;
+			pos += ((now - last) / 1000) * pxPerSec;
+			prompter.scrollTop = pos;
+		}
+		if (Math.abs(prompter.scrollTop - pos) > 1) pos = prompter.scrollTop;
+		last = now;
+		scrollRaf = requestAnimationFrame(step);
+	};
+	scrollRaf = requestAnimationFrame(step);
+}
+
+function stopScroll() {
+	cancelAnimationFrame(scrollRaf);
+	scrollRaf = 0;
+}
+
+function setScrollPaused(on: boolean) {
+	scrollPaused = on;
+	pauseScroll.textContent = scrollPaused ? "Resume" : "Pause";
+	pauseScroll.setAttribute("aria-pressed", String(scrollPaused));
 }
 
 async function restore() {
-	const stored = await chrome.storage.local.get(["glideOpts", "glideRecording"]);
+	const stored = await chrome.storage.local.get(["glideOpts", "glideScript", "glideTele", "glideRecording"]);
 	if (stored.glideOpts) opts = stored.glideOpts as Opts;
+	if (typeof stored.glideScript === "string") scriptEl.value = stored.glideScript;
+	if (stored.glideTele) {
+		const t = stored.glideTele as { speed?: number; fontSize?: number };
+		if (t.speed != null) speed.value = String(t.speed);
+		if (t.fontSize != null) fontSize.value = String(t.fontSize);
+	}
+	applyTelePrefs();
 	if (stored.glideRecording) startLoops();
 	await refresh();
-	void syncTeleToggle();
 }
 
 stopBtn.addEventListener("click", async () => {
@@ -205,11 +289,34 @@ stopBtn.addEventListener("click", async () => {
 	await refresh();
 });
 
-teleToggle.addEventListener("click", async () => {
-	teleToggle.disabled = true;
+presentBtn.addEventListener("click", () => setPresent(!presenting));
+pauseScroll.addEventListener("click", () => setScrollPaused(!scrollPaused));
+speed.addEventListener("input", queueTeleSave);
+fontSize.addEventListener("input", () => {
+	applyTelePrefs();
+	queueTeleSave();
+});
+scriptEl.addEventListener("input", queueScriptSave);
+popoutBtn.addEventListener("click", async () => {
+	popoutBtn.disabled = true;
 	await bg({ type: "tele-toggle" }).catch(() => null);
-	teleToggle.disabled = false;
-	void syncTeleToggle();
+	popoutBtn.disabled = false;
+});
+
+document.addEventListener("keydown", (e) => {
+	const editing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
+	if (e.key === "Escape" && !editing) {
+		setPresent(false);
+		return;
+	}
+	if (!presenting || editing) return;
+	if (e.key === " ") {
+		e.preventDefault();
+		setScrollPaused(!scrollPaused);
+	} else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+		e.preventDefault();
+		prompter.scrollTop += e.key === "ArrowDown" ? 72 : -72;
+	}
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {

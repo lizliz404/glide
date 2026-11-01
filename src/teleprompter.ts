@@ -58,12 +58,17 @@ function setPresent(on: boolean) {
 function startScroll() {
 	stopScroll();
 	let last = 0;
+	// scrollTop writes round to whole pixels, so `+= subpixel delta` never
+	// accumulates — keep our own position and resync on manual scrolls.
+	let pos = prompter.scrollTop;
 	const step = (now: number) => {
 		if (!presenting) return;
 		if (!scrollPaused && last) {
 			const pxPerSec = Number(speed.value) || 28;
-			prompter.scrollTop += ((now - last) / 1000) * pxPerSec;
+			pos += ((now - last) / 1000) * pxPerSec;
+			prompter.scrollTop = pos;
 		}
+		if (Math.abs(prompter.scrollTop - pos) > 1) pos = prompter.scrollTop;
 		last = now;
 		scrollRaf = requestAnimationFrame(step);
 	};
