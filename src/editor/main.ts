@@ -253,8 +253,8 @@ function bindControls() {
 		topPx.value = String(Math.min(state.browserView.topPx, Number(topPx.max)));
 		document.querySelector<HTMLOutputElement>('output[for="browser-top-px"]')!.value = `${topPx.value} px`;
 		$("browser-top-hint").textContent = tabCapture
-			? "This is a single-tab recording, so there is no browser chrome to hide. Record a whole browser window to keep or hide the tab strip, address bar and toolbar."
-			: "Keep or hide the recorded tab strip, address bar and toolbar. Adjust height to your browser; this also changes the preview. The source stays intact.";
+			? "Tab recordings have no browser bar to hide."
+			: "Crop the tab strip and address bar from the video. The original stays intact.";
 	};
 	const browserViewChanged = () => {
 		state.browserView = normalizeBrowserView({ hideTop: hideTop.checked, topPx: Number(topPx.value) });
@@ -391,10 +391,41 @@ function showSection(id: string) {
 // ------------------------------------------------------------------------------------------------
 // Zoom regions + timeline
 
+// Undo/redo (Screen Studio, Cap): every committed edit goes through saveProject, so history is a
+// stack of the edit snapshots it saw. A drag commits once, on pointer up.
+type Edit = string;
+const editOf = (): Edit => JSON.stringify({ regions: state.regions, trim: state.trim, browserView: state.browserView });
+let lastEdit: Edit = editOf();
+const undoStack: Edit[] = [];
+const redoStack: Edit[] = [];
+
 function saveProject() {
+	const now = editOf();
+	if (now !== lastEdit) {
+		undoStack.push(lastEdit);
+		if (undoStack.length > 100) undoStack.shift();
+		redoStack.length = 0;
+		lastEdit = now;
+	}
 	if (state.projectId && !saveProjectZooms(state.projectId, state.durationMs, state.regions, undefined, state.trim, state.browserView)) {
 		status("Edits could not be saved. Keep this tab open to avoid losing them.");
 	}
+}
+
+function stepHistory(from: Edit[], to: Edit[]) {
+	const prev = from.pop();
+	if (prev === undefined) return status("Nothing to " + (from === undoStack ? "undo" : "redo"));
+	to.push(lastEdit);
+	lastEdit = prev;
+	const e = JSON.parse(prev);
+	state.regions = e.regions;
+	state.trim = e.trim;
+	state.browserView = e.browserView;
+	if (!state.regions.some((r) => r.id === state.selectedId)) state.selectedId = null;
+	regionsChanged();
+	syncControls();
+	comp.reset();
+	if (currentMs() < state.trim.startMs || currentMs() > state.trim.endMs) seekTo(state.trim.startMs);
 }
 
 function regionsChanged() {
@@ -570,6 +601,8 @@ function bindTimeline() {
 			return;
 		}
 		seekTo(msAt(e.clientX));
+		// Screen Studio / Cap: clicking an empty spot on the zoom row adds a zoom there.
+		if ((e.target as HTMLElement).id === "zoom-track") return addZoomAtPlayhead();
 		const move = (ev: PointerEvent) => seekTo(msAt(ev.clientX));
 		tl.addEventListener("pointermove", move);
 		tl.addEventListener("pointerup", () => tl.removeEventListener("pointermove", move), { once: true });
@@ -653,6 +686,11 @@ function bindTransport() {
 			if (!state.screenBlob) return;
 			e.preventDefault();
 			seekTo(currentMs() + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 5000 : 1000));
+		} else if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z" || e.key === "y")) {
+			if (!state.screenBlob) return;
+			e.preventDefault();
+			if (e.key === "y" || e.shiftKey) stepHistory(redoStack, undoStack);
+			else stepHistory(undoStack, redoStack);
 		} else if ((e.key === "z" || e.key === "Z") && !e.ctrlKey && !e.metaKey && !e.altKey) {
 			if (!state.screenBlob) return;
 			e.preventDefault();
@@ -664,7 +702,7 @@ function bindTransport() {
 	});
 
 	// Local files (works without the extension too).
-	$<HTMLInputElement>("open-files").addEventListener("change", async (e) => {
+	const openFiles = async (e: Event) => {
 		const files = [...((e.target as HTMLInputElement).files ?? [])];
 		const vids = files.filter((f) => f.type.startsWith("video/"));
 		const json = files.find((f) => f.name.endsWith(".json"));
@@ -674,7 +712,9 @@ function bindTransport() {
 		const cam = vids.find((v) => v !== screen) ?? null;
 		$("empty").hidden = true;
 		await loadBundle({ id: "local", createdAt: Date.now(), startedAt: 0, durationMs: 0, surface: "browser", width: 0, height: 0, hasCamera: !!cam, hasMic: false, ...ev.meta }, screen, cam, ev.events ?? []);
-	});
+	};
+	$("open-files").addEventListener("change", openFiles);
+	$("empty-open").addEventListener("change", openFiles);
 
 	// Export runs entirely in this page (WebCodecs + Mediabunny); it never talks to the extension's
 	// service worker, so Chrome stopping an idle MV3 worker can't interrupt it.
@@ -783,6 +823,8 @@ async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, e
 	state.projectId = projectId;
 	if (savedZooms === null && state.settings.autoApplyZooms) runSuggestions();
 	else regionsChanged();
+	lastEdit = editOf();
+	undoStack.length = redoStack.length = 0;
 	settingsChanged({ rebind: true });
 	await preloadCursorAssets().catch(() => {});
 	if (generation !== loadGeneration) return;
@@ -824,18 +866,19 @@ async function init() {
 	} catch (e) {
 		const message = String(e);
 		status(message);
-		showEmptyState(`${message}. It was deleted or isn't on this device — import a video with Open files, or record again from the Glide toolbar button.`);
+		showEmptyState("Recording not found", "It was deleted or isn't on this device. Open a video, or record again from the Glide toolbar button.");
 		draw(true);
 		syncActions();
 	}
 }
 
 /** Visible recovery card. Text only: ids can come from the URL. */
-function showEmptyState(message: string) {
+function showEmptyState(title: string, message: string) {
 	const empty = $("empty");
 	empty.hidden = false;
 	empty.setAttribute("role", "alert");
-	empty.querySelector("p")!.textContent = message;
+	$("empty-title").textContent = title;
+	$("empty-msg").textContent = message;
 }
 
 // Test hook (used by test/e2e.mjs).
