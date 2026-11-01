@@ -114,7 +114,7 @@ startBtn.addEventListener("click", async () => {
 		const res = await bg<{ ok: boolean; error?: string; pointer?: boolean }>({ type: "start-tab", opts, tabId: activeTab.id });
 		if (res?.ok) {
 			setRecording(true, Date.now());
-			status.textContent = "Recording this tab — your camera, mic level and teleprompter are in the side panel.";
+			status.textContent = "Recording this tab — your camera and mic level are in the side panel.";
 			return;
 		}
 		// Any tabCapture/getUserMedia failure falls back to the picker-based recorder
