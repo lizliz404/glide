@@ -106,8 +106,13 @@ async function start(
 			audioTracks.push(...dest.stream.getAudioTracks());
 		}
 
+		// Scale with what was actually captured, like Screenity's per-resolution presets
+		// (720p 5, 1080p 12, 4K 20 Mbps): ~0.13 bits/pixel/frame gives ~8 Mbps at 1080p30,
+		// ~14 at 1440p30, ~32 at 4K30, clamped to 4–40 Mbps.
+		const px = (settings.width ?? 1920) * (settings.height ?? 1080) * Math.min(settings.frameRate ?? 30, 60);
+		const bitrate = Math.round(Math.min(40e6, Math.max(4e6, px * 0.13)));
 		const screenStream = new MediaStream([vTrack, ...audioTracks]);
-		const screenRec = new MediaRecorder(screenStream, { mimeType: pickMime("video"), videoBitsPerSecond: 12_000_000 });
+		const screenRec = new MediaRecorder(screenStream, { mimeType: pickMime("video"), videoBitsPerSecond: bitrate });
 		const camRec = cam ? new MediaRecorder(cam, { mimeType: pickMime("camera"), videoBitsPerSecond: 4_000_000 }) : null;
 
 		const s: Session = {
