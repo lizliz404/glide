@@ -39,6 +39,8 @@ camVid.muted = true;
 
 const POSITIONS: WebcamPositionPreset[] = ["top-left", "top-center", "top-right", "center-left", "center", "center-right", "bottom-left", "bottom-center", "bottom-right"];
 const MIN_REGION_MS = 250;
+type Zoom = ZoomRegion & { disabled?: boolean };
+let tlZoom = 1;
 const NEW_REGION_MS = 1000;
 
 const state = {
@@ -67,7 +69,7 @@ const fmt = (ms: number) => {
 	return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
 };
 const currentMs = () => screenVid.currentTime * 1000;
-const scene = () => ({ telemetry: state.telemetry, regions: state.regions, videoW: screenVid.videoWidth || state.meta?.width || 0, videoH: screenVid.videoHeight || state.meta?.height || 0,
+const scene = () => ({ telemetry: state.telemetry, regions: state.regions.filter((r) => !(r as Zoom).disabled), videoW: screenVid.videoWidth || state.meta?.width || 0, videoH: screenVid.videoHeight || state.meta?.height || 0,
 	crop: browserCrop(state.browserView, screenVid.videoHeight || state.meta?.height || 0, state.meta?.surface) });
 const hasCam = () => !!state.camBlob;
 
@@ -503,7 +505,7 @@ function drawTimeline() {
 	track.replaceChildren();
 	for (const r of state.regions) {
 		const b = document.createElement("div");
-		b.className = "zoom-block";
+		b.className = "zoom-block" + ((r as Zoom).disabled ? " disabled" : "");
 		b.dataset.id = r.id;
 		b.setAttribute("role", "button");
 		b.tabIndex = 0;
@@ -525,6 +527,8 @@ function syncTrimControls() {
 	const { startMs, endMs } = state.trim;
 	$("trim-before").style.width = pctOf(startMs);
 	$("trim-after").style.width = pctOf(Math.max(0, state.durationMs - endMs));
+	$("trim-handle-start").style.left = pctOf(startMs);
+	$("trim-handle-end").style.left = pctOf(endMs);
 	$("trim-range").textContent = `${fmt(startMs)}–${fmt(endMs)} · ${fmt(endMs - startMs)} kept`;
 	syncActions();
 }
@@ -562,6 +566,8 @@ function seekTo(ms: number) {
 	updatePlayhead(t * 1000);
 }
 
+const closeMenu = () => { $("zoom-menu").hidden = true; };
+
 function bindTimeline() {
 	const tl = $("timeline");
 	const msAt = (clientX: number) => {
@@ -569,7 +575,22 @@ function bindTimeline() {
 		return ((clientX - r.left) / r.width) * state.durationMs;
 	};
 	tl.addEventListener("pointerdown", (e) => {
-		if (!state.durationMs) return;
+		if (!state.durationMs || e.button !== 0) return;
+		closeMenu();
+		// Trim handles (Screen Studio / Cap): drag the clip edges to cut the ends.
+		const th = (e.target as HTMLElement).closest<HTMLElement>(".trim-handle");
+		if (th) {
+			tl.setPointerCapture(e.pointerId);
+			const edge = th.dataset.edge as "start" | "end";
+			const move = (ev: PointerEvent) => {
+				state.trim = setTrimEdge(state.trim, edge, msAt(ev.clientX), state.durationMs);
+				syncTrimControls();
+				seekTo(edge === "start" ? state.trim.startMs : state.trim.endMs);
+			};
+			tl.addEventListener("pointermove", move);
+			tl.addEventListener("pointerup", () => { tl.removeEventListener("pointermove", move); changeTrim(state.trim); }, { once: true });
+			return;
+		}
 		const block = (e.target as HTMLElement).closest<HTMLElement>(".zoom-block");
 		tl.setPointerCapture(e.pointerId);
 		if (block) {
@@ -619,6 +640,39 @@ function bindTimeline() {
 			seekTo(currentMs() + (e.key === "ArrowLeft" ? -1 : 1) * (e.shiftKey ? 5000 : 1000));
 		}
 	});
+	// Ctrl/Cmd + scroll zooms the timeline around the pointer; plain scroll pans it.
+	const scroller = $("timeline-scroll");
+	scroller.addEventListener("wheel", (e) => {
+		if (!e.ctrlKey && !e.metaKey) return;
+		e.preventDefault();
+		const box = scroller.getBoundingClientRect();
+		const frac = (e.clientX - box.left + scroller.scrollLeft) / tl.offsetWidth;
+		tlZoom = Math.max(1, Math.min(20, tlZoom * Math.exp(-e.deltaY / 300)));
+		tl.style.width = `${tlZoom * 100}%`;
+		scroller.scrollLeft = frac * tl.offsetWidth - (e.clientX - box.left);
+		drawTimeline();
+	}, { passive: false });
+	// Right-click a zoom block: disable or remove it.
+	const menu = $("zoom-menu");
+	tl.addEventListener("contextmenu", (e) => {
+		const block = (e.target as HTMLElement).closest<HTMLElement>(".zoom-block");
+		if (!block) return;
+		e.preventDefault();
+		selectRegion(block.dataset.id!);
+		const r = state.regions.find((x) => x.id === block.dataset.id) as Zoom;
+		$("zoom-menu-toggle").textContent = r.disabled ? "Enable zoom" : "Disable zoom";
+		menu.style.left = `${e.clientX}px`;
+		menu.style.top = `${e.clientY}px`;
+		menu.hidden = false;
+		$<HTMLButtonElement>("zoom-menu-toggle").focus();
+	});
+	$("zoom-menu-toggle").addEventListener("click", () => {
+		const r = state.regions.find((x) => x.id === state.selectedId) as Zoom | undefined;
+		if (r) { r.disabled = !r.disabled || undefined; regionsChanged(); }
+		closeMenu();
+	});
+	$("zoom-menu-remove").addEventListener("click", () => { deleteSelected(); closeMenu(); });
+	document.addEventListener("pointerdown", (e) => { if (!menu.contains(e.target as Node)) closeMenu(); });
 	$("add-zoom").addEventListener("click", addZoomAtPlayhead);
 	$("suggest-zooms").addEventListener("click", runSuggestions);
 	$("trim-start").addEventListener("click", () => changeTrim(setTrimEdge(state.trim, "start", currentMs(), state.durationMs)));
@@ -698,7 +752,7 @@ function bindTransport() {
 		} else if ((e.key === "Delete" || e.key === "Backspace") && state.selectedId) {
 			e.preventDefault();
 			deleteSelected();
-		} else if (e.key === "Escape") selectRegion(null, false);
+		} else if (e.key === "Escape") { closeMenu(); selectRegion(null, false); }
 	});
 
 	// Local files (works without the extension too).

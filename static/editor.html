@@ -137,7 +137,7 @@
     <button id="add-zoom" type="button" class="btn small">+ Zoom</button>
     <button id="suggest-zooms" type="button" class="btn small ghost">Suggest Zooms</button>
     <span id="seg-count" class="hint"></span>
-    <span id="shortcut-hint" class="hint">Space play · ←/→ seek · Z or click the zoom row to add · Del remove · ⌘/Ctrl+Z undo</span>
+    <span id="shortcut-hint" class="hint">Space play · ←/→ seek · Z or click the zoom row to add · Del remove · right-click a zoom for more · ⌘/Ctrl+scroll zoom timeline · ⌘/Ctrl+Z undo</span>
     <span class="spacer"></span>
     <div class="trim-controls" role="group" aria-label="Retained video range">
       <button id="trim-start" type="button" class="btn small ghost" title="Keep from the playhead">Set start</button>
@@ -146,12 +146,15 @@
       <button id="trim-reset" type="button" class="btn small ghost" disabled>Reset trim</button>
     </div>
   </div>
+  <div id="timeline-scroll" class="timeline-scroll">
   <div id="timeline" class="timeline" role="slider" tabindex="0" aria-label="Playhead" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
     <div id="ruler" class="ruler"></div>
-    <div class="track clip-track"><div class="clip">Recording</div><div id="clicks" class="clicks"></div><div id="trim-before" class="trim-excluded" aria-hidden="true"></div><div id="trim-after" class="trim-excluded" aria-hidden="true"></div></div>
+    <div class="track clip-track"><div class="clip">Recording</div><div id="clicks" class="clicks"></div><div id="trim-before" class="trim-excluded" aria-hidden="true"></div><div id="trim-after" class="trim-excluded" aria-hidden="true"></div><div id="trim-handle-start" class="trim-handle" data-edge="start" title="Drag to trim the start"></div><div id="trim-handle-end" class="trim-handle" data-edge="end" title="Drag to trim the end"></div></div>
     <div id="zoom-track" class="track zoom-track" aria-label="Zoom regions"></div>
     <div id="playhead" class="playhead"></div>
   </div>
+  </div>
+  <div id="zoom-menu" class="menu" role="menu" hidden><button id="zoom-menu-toggle" type="button" role="menuitem">Disable zoom</button><button id="zoom-menu-remove" type="button" role="menuitem" class="danger">Remove zoom</button></div>
 </section>
 
 <footer class="credit">Based on <a href="https://github.com/webadderallorg/Recordly" target="_blank" rel="noopener">Recordly</a> (AGPL-3.0) · Glide is AGPL-3.0 · <a href="https://github.com/lizliz404/glide" target="_blank" rel="noopener">Source</a></footer>
