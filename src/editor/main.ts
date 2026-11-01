@@ -391,7 +391,7 @@ function bindControls() {
 /** Screen Studio-style collapsible groups: each panel h2 becomes a toggle for the controls below it. */
 function makeCollapsible() {
 	const KEY = "glide.collapsed";
-	const DEFAULT_CLOSED = ["Webcam", "Browser top"];
+	const DEFAULT_CLOSED = ["Webcam"];
 	let closed: string[] = DEFAULT_CLOSED;
 	try { closed = JSON.parse(localStorage.getItem(KEY) ?? "null") ?? DEFAULT_CLOSED; } catch { /* default */ }
 	for (const h of document.querySelectorAll<HTMLHeadingElement>("#panel-scene > h2, #panel-settings > h2")) {
