@@ -61,6 +61,12 @@ async function restore() {
 		ul.append(li);
 	}
 	$("recent-wrap").hidden = recent.length === 0;
+	$("intro").hidden = recent.length > 0;
+	// Show each device's permission up front, so Record never surprises with a setup tab.
+	for (const [name, el] of [["microphone", "mic-perm"], ["camera", "camera-perm"]] as const) {
+		const st = await navigator.permissions.query({ name: name as PermissionName }).catch(() => null);
+		$(el).textContent = !st ? "" : st.state === "granted" ? "· allowed" : st.state === "denied" ? "· blocked in Chrome settings" : "· asks once on Record";
+	}
 }
 
 function setRecording(on: boolean, since = 0, isPaused = false) {

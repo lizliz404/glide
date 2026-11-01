@@ -3,14 +3,15 @@
 <head><meta charset="utf-8" /><title>Glide</title><link rel="stylesheet" href="ui.css" /></head>
 <body class="popup">
   <h1 class="brand">Glide</h1>
+  <p class="hint" id="intro" hidden>Pick what to record, press Record, then choose it in Chrome's dialog. Stop opens the editor, where zooms, cursor and background are added. Nothing leaves this computer.</p>
   <label>Capture <select id="surface">
     <option value="browser" selected>Single tab — stays locked to that tab</option>
     <option value="window">Window — follows tabs in this window</option>
     <option value="monitor">Entire screen</option>
   </select></label>
   <p class="hint" id="surface-note">Stays locked to the tab you pick, with no browser chrome. Cleanest base for a demo.</p>
-  <label class="check"><input id="mic" type="checkbox" checked /> Microphone</label>
-  <label class="check"><input id="camera" type="checkbox" checked /> Webcam</label>
+  <label class="check"><input id="mic" type="checkbox" checked /> Microphone <span class="hint" id="mic-perm"></span></label>
+  <label class="check"><input id="camera" type="checkbox" checked /> Webcam <span class="hint" id="camera-perm"></span></label>
   <button id="start" type="button" class="btn primary wide">Record</button>
   <button id="pause" type="button" class="btn wide" hidden>Pause</button>
   <button id="stop" type="button" class="btn danger wide" hidden>Stop and edit</button>
