@@ -46,7 +46,7 @@ body.editor { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1
 .rail [role=tab]:hover { background: #1a1f2b; color: var(--text); }
 .rail [role=tab][aria-selected=true] { background: rgba(79,140,255,.16); color: var(--accent); }
 .panel { border-right: 1px solid var(--line); background: var(--panel); padding: 6px 16px 20px; overflow-y: auto; }
-.panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 16px 0 8px; font-weight: 600; }
+.panel h2 { font-size: 14px; color: var(--text); margin: 20px 0 8px; font-weight: 600; }
 .panel .label { display: block; margin: 8px 0 6px; }
 .grid { display: grid; gap: 6px; margin: 8px 0; }
 /* 38 wallpapers: keep the swatch grid to about six rows so frame/webcam controls stay reachable. */
@@ -71,7 +71,11 @@ body.editor { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1
 .stage-wrap { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; }
 #stage { max-width: 100%; max-height: 100%; display: block; border-radius: 6px; box-shadow: 0 10px 40px rgba(0,0,0,.45); }
 #stage.pick { cursor: crosshair; }
-.empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 40px; text-align: center; color: var(--muted); }
+.empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 40px; }
+.empty .card { max-width: 420px; padding: 22px 26px; border-radius: 14px; background: rgba(11,13,18,.88); border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0,0,0,.5); text-align: center; }
+.empty h3 { margin: 0 0 6px; font-size: 18px; color: var(--text); }
+.empty p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.empty .btn { display: inline-flex; justify-content: center; margin: 0; }
 .transport { display: flex; align-items: center; gap: 12px; }
 .spacer { flex: 1; }
 label.inline { margin: 0; gap: 6px; color: var(--muted); }
@@ -99,3 +103,4 @@ label.inline { margin: 0; gap: 6px; color: var(--muted); }
 .playhead::before { content: ""; position: absolute; top: 0; left: -5px; border: 6px solid transparent; border-top-color: #f43f5e; }
 .credit { padding: 4px 16px 6px; font-size: 11px; color: var(--muted); background: var(--panel); text-align: right; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+.zoom-track { cursor: copy; }

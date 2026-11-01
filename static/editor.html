@@ -32,12 +32,6 @@
 
   <aside class="panel" aria-label="Settings panel">
     <section id="panel-scene" role="tabpanel" aria-labelledby="tab-scene">
-      <h2>Browser top</h2>
-      <label class="check"><input id="browser-hide-top" type="checkbox" /> Hide browser top in export</label>
-      <div id="browser-top-controls" hidden>
-        <label>Top height <input id="browser-top-px" type="range" min="0" max="500" step="1" /><output for="browser-top-px"></output></label>
-      </div>
-      <p id="browser-top-hint" class="hint">Record the whole browser window to follow tab switches. Keep or hide its tab strip, address bar and toolbar here. Preview matches export.</p>
       <h2>Background</h2>
       <div id="bg-pane-image" class="bg-pane">
         <div id="wallpapers" class="grid wallpapers" role="radiogroup" aria-label="Wallpapers"></div>
@@ -88,6 +82,12 @@
         <label class="check"><input id="webcam-mirror" type="checkbox" /> Mirror webcam</label>
         <label class="check"><input id="webcam-react" type="checkbox" /> Webcam Reacts To Zoom</label>
       </div>
+      <h2>Browser top</h2>
+      <label class="check"><input id="browser-hide-top" type="checkbox" /> Hide browser top in export</label>
+      <div id="browser-top-controls" hidden>
+        <label>Top height <input id="browser-top-px" type="range" min="0" max="500" step="1" /><output for="browser-top-px"></output></label>
+      </div>
+      <p id="browser-top-hint" class="hint">Record the whole browser window to follow tab switches. Keep or hide its tab strip, address bar and toolbar here. Preview matches export.</p>
     </section>
 
     <section id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
@@ -121,7 +121,7 @@
 
   <main class="preview" aria-label="Preview">
     <div class="stage-wrap"><canvas id="stage" width="1920" height="1080" aria-label="Composited video preview"></canvas>
-      <div id="empty" class="empty" hidden><p>No recording loaded. Record from the Glide toolbar button, or use <b>Open files</b> (screen video, optional webcam video with “cam” in its name, optional events JSON).</p></div>
+      <div id="empty" class="empty" hidden><div class="card"><h3 id="empty-title">No recording yet</h3><p id="empty-msg">Record with the Glide toolbar button, or open a video from your computer.</p><label class="btn primary">Open video<input id="empty-open" type="file" accept="video/*,.json" multiple hidden /></label></div></div>
     </div>
     <div class="transport">
       <button id="play" type="button" class="btn icon" aria-pressed="false" aria-label="Play">▶</button>
@@ -137,7 +137,7 @@
     <button id="add-zoom" type="button" class="btn small">+ Zoom</button>
     <button id="suggest-zooms" type="button" class="btn small ghost">Suggest Zooms</button>
     <span id="seg-count" class="hint"></span>
-    <span id="shortcut-hint" class="hint">Space play · ←/→ seek · Z zoom · Delete removes zoom</span>
+    <span id="shortcut-hint" class="hint">Space play · ←/→ seek · Z or click the zoom row to add · Del remove · ⌘/Ctrl+Z undo</span>
     <span class="spacer"></span>
     <div class="trim-controls" role="group" aria-label="Retained video range">
       <button id="trim-start" type="button" class="btn small ghost" title="Keep from the playhead">Set start</button>
