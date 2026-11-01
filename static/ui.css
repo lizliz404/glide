@@ -67,9 +67,11 @@ body.editor { height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1
 .export-group progress { width: 140px; }
 .workspace { display: grid; grid-template-columns: 76px 300px minmax(0, 1fr); min-height: 0; }
 .rail { display: flex; flex-direction: column; gap: 4px; padding: 10px 8px; border-right: 1px solid var(--line); background: var(--panel); }
-.rail [role=tab] { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 9px 4px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
-.rail [role=tab] svg { width: 22px; height: 22px; }
-.rail [role=tab]:hover { background: #1a1f2b; color: var(--text); }
+.rail-tabs { display: flex; flex-direction: column; gap: 4px; }
+/* .rail-link rides along with the section tabs (same row) but navigates out. */
+.rail [role=tab], .rail .rail-link { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 9px 4px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; text-decoration: none; }
+.rail [role=tab] svg, .rail .rail-link svg { width: 22px; height: 22px; }
+.rail [role=tab]:hover, .rail .rail-link:hover { background: #1a1f2b; color: var(--text); }
 .rail [role=tab][aria-selected=true] { background: rgba(79,140,255,.16); color: var(--accent); }
 .panel { border-right: 1px solid var(--line); background: var(--panel); padding: 6px 16px 20px; overflow-y: auto; }
 .panel, .grid.wallpapers { scrollbar-width: thin; scrollbar-color: #2b3242 transparent; }
@@ -129,8 +131,8 @@ body.exporting #empty { pointer-events: auto; opacity: 1; }
 /* The 76+300 sidebar otherwise eats the preview. Labels collapse; the panel narrows. */
 @media (max-width: 860px) {
 	.workspace { grid-template-columns: 56px minmax(180px, 240px) minmax(0, 1fr); }
-	.rail [role=tab] span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-	.rail [role=tab] { position: relative; }
+	.rail [role=tab] span, .rail .rail-link span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+	.rail [role=tab], .rail .rail-link { position: relative; }
 	.panel { padding: 6px 10px 16px; }
 	.topbar { gap: 8px; padding: 8px 10px; }
 	.export-group progress { width: 72px; }
@@ -157,17 +159,17 @@ body.exporting #empty { pointer-events: auto; opacity: 1; }
 .credit { padding: 4px 16px 6px; font-size: 11px; color: var(--muted); background: var(--panel); text-align: right; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
-/* side panel — compact utility column (~300px, Loom-class control panels run
-   280–320px); the cam preview is a small centered thumb, not a full-width face. */
-body.sidepanel { width: 100%; max-width: 300px; height: 100vh; margin: 0 auto; padding: 14px 12px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
-.sp-status { display: flex; align-items: center; gap: 8px; min-height: 24px; }
-.sp-status .mono { color: var(--text); font-size: 15px; }
+/* side panel — slim monitor column. Chrome floors the dock itself at ~360px
+   (drag-resizable wider only), so the content column is kept narrow and centred
+   inside it; the monitor trades width for vertical space. */
+body.sidepanel { width: 100%; max-width: 204px; height: 100vh; margin: 0 auto; padding: 10px 8px 14px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.sp-status { display: flex; align-items: center; gap: 6px; min-height: 22px; flex-wrap: wrap; }
+.sp-status .mono { color: var(--text); font-size: 14px; }
 .sp-pill { margin-left: auto; font-size: 11px; color: var(--text); background: #1a1f2b; border: 1px solid var(--line); border-radius: 99px; padding: 2px 8px; }
 .sp-pill[data-pointer="off"] { color: var(--muted); }
-.sp-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
-.sp-cam { text-align: center; }
-#cam { display: block; width: 100%; max-width: 176px; margin: 0 auto; aspect-ratio: 16/9; object-fit: cover; border-radius: 8px; background: #000; transform: scaleX(-1); }
-.sp-fallback { margin: 0; min-height: 48px; display: grid; place-items: center; color: var(--muted); font-size: 13px; }
+.sp-card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+#cam { display: block; width: 100%; margin: 0 auto; aspect-ratio: 4/3; object-fit: cover; border-radius: 8px; background: #000; transform: scaleX(-1); }
+.sp-fallback { margin: 0; min-height: 56px; display: grid; place-items: center; color: var(--muted); font-size: 12px; }
 .sp-meter-row { display: flex; align-items: center; gap: 8px; }
 /* Thin meter: full-width level gradient clipped from the right so green→amber→red
    zones stay anchored to position, not to the current level. */

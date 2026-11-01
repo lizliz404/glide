@@ -15,6 +15,12 @@
     <label class="check"><input id="mic" type="checkbox" checked /> Microphone <span class="hint" id="mic-perm"></span></label>
     <label class="check"><input id="camera" type="checkbox" checked /> Webcam <span class="hint" id="camera-perm"></span></label>
   </div>
+  <!-- Docked, the monitor panel narrows the recorded tab's viewport (Chrome keeps
+       it >= ~360px) and sits inside window/screen captures. Off = full-width take
+       with no live cam/mic preview. -->
+  <div class="check-row">
+    <label class="check" title="Camera and mic monitor while recording. Docked, it narrows the recorded tab's viewport — turn off for a full-width take."><input id="monitor" type="checkbox" checked /> Side panel monitor</label>
+  </div>
   <button id="start" type="button" class="btn primary wide">Record</button>
   <button id="pause" type="button" class="btn wide" hidden>Pause</button>
   <button id="stop" type="button" class="btn danger wide" hidden>Stop and edit</button>

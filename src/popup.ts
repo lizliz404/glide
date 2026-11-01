@@ -10,6 +10,7 @@ const status = $<HTMLElement>("status");
 const mic = $<HTMLInputElement>("mic");
 const camera = $<HTMLInputElement>("camera");
 const surface = $<HTMLSelectElement>("surface");
+const monitor = $<HTMLInputElement>("monitor");
 
 const bg = <T = any>(msg: object) => chrome.runtime.sendMessage<object, T>({ target: "background", ...msg });
 
@@ -36,7 +37,11 @@ function timeAgo(at: number, now = Date.now()) {
 }
 
 async function restore() {
-	const { glideOpts } = (await chrome.storage.local.get("glideOpts")) as { glideOpts?: RecordOptions };
+	const { glideOpts, glidePanel } = (await chrome.storage.local.get(["glideOpts", "glidePanel"])) as {
+		glideOpts?: RecordOptions;
+		glidePanel?: boolean;
+	};
+	monitor.checked = glidePanel !== false;
 	if (glideOpts) {
 		mic.checked = glideOpts.mic;
 		camera.checked = glideOpts.camera;
@@ -76,7 +81,7 @@ function setRecording(on: boolean, since = 0, isPaused = false) {
 	stopBtn.hidden = !on;
 	pauseBtn.hidden = !on;
 	pauseBtn.textContent = paused ? "Resume" : "Pause";
-	for (const el of [mic, camera, surface]) el.disabled = on;
+	for (const el of [mic, camera, surface, monitor]) el.disabled = on;
 	status.textContent = !on ? "" : paused ? "Paused. The pause is cut from the video." : `Recording since ${new Date(since).toLocaleTimeString()}`;
 }
 
@@ -93,7 +98,7 @@ async function devicePermissionsOk(opts: RecordOptions) {
 
 startBtn.addEventListener("click", async () => {
 	const opts: RecordOptions = { mic: mic.checked, camera: camera.checked, surface: surface.value as Surface };
-	await chrome.storage.local.set({ glideOpts: opts });
+	await chrome.storage.local.set({ glideOpts: opts, glidePanel: monitor.checked });
 	// Offscreen documents cannot show permission prompts, so mic/camera must be granted to
 	// the extension origin once from a visible page.
 	if (!(await devicePermissionsOk(opts))) {
@@ -103,9 +108,13 @@ startBtn.addEventListener("click", async () => {
 	// Host access is optional and only used to log pointer positions while recording.
 	await chrome.permissions.request({ origins: ["<all_urls>"] }).catch(() => false);
 	// Open the confidence panel (webcam preview, mic level, teleprompter, stop) in the
-	// current window — this needs the Record click's user gesture.
+	// current window — this needs the Record click's user gesture. With the monitor
+	// off, make sure a panel left open is folded so the tab keeps its full viewport.
 	const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-	if (activeTab?.windowId != null) await chrome.sidePanel.open({ windowId: activeTab.windowId }).catch(() => {});
+	if (activeTab?.windowId != null) {
+		if (monitor.checked) await chrome.sidePanel.open({ windowId: activeTab.windowId }).catch(() => {});
+		else if (chrome.sidePanel.close) await chrome.sidePanel.close({ windowId: activeTab.windowId }).catch(() => {});
+	}
 	// Single tab: capture via chrome.tabCapture on the tab the user is looking at —
 	// no picker, exact pointer identity, no browser chrome in frame. Give the side
 	// panel a beat to open first so its layout reflow doesn't land in the recording.
@@ -114,7 +123,9 @@ startBtn.addEventListener("click", async () => {
 		const res = await bg<{ ok: boolean; error?: string; pointer?: boolean }>({ type: "start-tab", opts, tabId: activeTab.id });
 		if (res?.ok) {
 			setRecording(true, Date.now());
-			status.textContent = "Recording this tab — your camera and mic level are in the side panel.";
+			status.textContent = monitor.checked
+				? "Recording this tab — your camera and mic level are in the side panel."
+				: "Recording this tab.";
 			return;
 		}
 		// Any tabCapture/getUserMedia failure falls back to the picker-based recorder

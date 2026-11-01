@@ -1183,6 +1183,12 @@ async function loadBundle(meta: RecordingMeta, screen: Blob, cam: Blob | null, e
 }
 
 async function init() {
+	// The side panel is a recording monitor; docked in the editor it just steals
+	// preview width, so fold it back up on every entry. chrome.sidePanel.close is
+	// Chrome 141+; missing APIs (older Chrome, the dev http page) keep it open.
+	void Promise.resolve(globalThis.chrome?.tabs?.getCurrent?.())
+		.then((t) => (t?.windowId != null ? globalThis.chrome?.sidePanel?.close?.({ windowId: t.windowId }) : undefined))
+		.catch(() => {});
 	makeCollapsible();
 	bindExportPrefs();
 	bindControls();
